@@ -192,6 +192,7 @@ function Shell({ view, setView, isAdmin, signOut, children }) {
     { id: "attendance", label: "Attendance", icon: CalendarCheck },
     { id: "members", label: "Members", icon: Users },
     { id: "reports", label: "Reports", icon: BarChart3 },
+    { id: "departments", label: "Depts", icon: BookOpen },
     ...(isAdmin ? [{ id: "staff", label: "Staff", icon: UserCog }] : [])
   ];
   return (
@@ -1062,6 +1063,233 @@ function ReportsView({ members }) {
   );
 }
 
+
+/* ============================================================
+   DEPARTMENTS VIEW
+   ============================================================ */
+function DepartmentsView({ members, refresh, isAdmin }) {
+  const [departments, setDepartments] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null); // { id, name, description }
+  const [showCreate, setShowCreate] = useState(false);
+  const [newDept, setNewDept] = useState({ name: "", description: "" });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmDel, setConfirmDel] = useState(null);
+  const [search, setSearch] = useState("");
+  const [memberSearch, setMemberSearch] = useState("");
+  const [assigningMember, setAssigningMember] = useState(false);
+  const [selectedProfile, setSelectedProfile] = useState(null);
+
+  const loadDepts = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("departments").select("*").order("name");
+    setDepartments(data || []);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadDepts(); }, []);
+
+  const deptMembers = selected
+    ? members.filter(m => m.department === selected.name && !m.archived)
+    : [];
+
+  const unassignedInDept = members.filter(m =>
+    !m.archived &&
+    m.full_name.toLowerCase().includes(memberSearch.toLowerCase()) &&
+    m.department !== selected?.name
+  );
+
+  const createDept = async () => {
+    if (!newDept.name.trim()) { setError("Department name is required."); return; }
+    setSaving(true); setError("");
+    const { error: err } = await supabase.from("departments").insert([{ name: newDept.name.trim(), description: newDept.description.trim() }]);
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    setNewDept({ name: "", description: "" });
+    setShowCreate(false);
+    loadDepts();
+  };
+
+  const deleteDept = async () => {
+    await supabase.from("departments").delete().eq("id", confirmDel.id);
+    setConfirmDel(null);
+    if (selected?.id === confirmDel.id) setSelected(null);
+    loadDepts();
+  };
+
+  const assignMember = async (member) => {
+    await supabase.from("members").update({ department: selected.name }).eq("id", member.id);
+    refresh(); setMemberSearch("");
+  };
+
+  const removeMember = async (member) => {
+    await supabase.from("members").update({ department: "" }).eq("id", member.id);
+    refresh();
+  };
+
+  const filteredDepts = departments.filter(d => d.name.toLowerCase().includes(search.toLowerCase()));
+
+  // Department detail view
+  if (selected) {
+    return (
+      <div>
+        <div className="flex items-center gap-3 mb-5">
+          <div onClick={() => setSelected(null)} className="cursor-pointer text-[#4A0E52] flex items-center gap-1 text-sm">
+            ← Back
+          </div>
+          <h1 className="font-display text-2xl text-[#4A0E52] flex-1">{selected.name}</h1>
+          {isAdmin && (
+            <div onClick={() => setConfirmDel(selected)} className="p-2 cursor-pointer text-red-500">
+              <Trash2 className="w-4 h-4" />
+            </div>
+          )}
+        </div>
+        {selected.description && <p className="text-sm text-gray-500 mb-4">{selected.description}</p>}
+
+        {/* Members in this department */}
+        <div className="bg-white rounded-lg border border-[#E9E2CC] mb-4">
+          <div className="px-4 py-3 border-b border-[#F1ECDE] flex items-center justify-between">
+            <p className="text-sm font-medium">{deptMembers.length} member{deptMembers.length !== 1 ? "s" : ""}</p>
+          </div>
+          {deptMembers.length === 0 && <p className="p-4 text-sm text-gray-400">No members in this department yet.</p>}
+          {deptMembers.map(m => (
+            <div key={m.id} className="flex items-center justify-between px-4 py-3 border-b border-[#F1ECDE] last:border-0">
+              <div className="cursor-pointer flex-1" onClick={() => setSelectedProfile(m)}>
+                <p className="text-sm font-medium hover:text-[#4A0E52]">{m.full_name}</p>
+                <p className="text-xs text-gray-400">{m.membership_status}</p>
+              </div>
+              <div className="flex items-center gap-1">
+                {m.phone && (
+                  <a href={"https://wa.me/234" + m.phone.replace(/^0/, "")} target="_blank" rel="noopener noreferrer" className="p-2 text-green-600" onClick={e => e.stopPropagation()}>
+                    <Phone className="w-4 h-4" />
+                  </a>
+                )}
+                {isAdmin && (
+                  <div onClick={() => removeMember(m)} className="p-2 cursor-pointer text-red-400" title="Remove from department">
+                    <X className="w-4 h-4" />
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Add members to department */}
+        {isAdmin && (
+          <div className="bg-white rounded-lg border border-[#E9E2CC]">
+            <div className="px-4 py-3 border-b border-[#F1ECDE] flex items-center justify-between cursor-pointer"
+              onClick={() => setAssigningMember(!assigningMember)}>
+              <p className="text-sm font-medium text-[#4A0E52]">+ Add members to this department</p>
+              <ChevronDown className={`w-4 h-4 text-[#4A0E52] transition-transform ${assigningMember ? "rotate-180" : ""}`} />
+            </div>
+            {assigningMember && (
+              <div>
+                <div className="px-4 py-2 border-b border-[#F1ECDE]">
+                  <div className="relative">
+                    <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+                    <input placeholder="Search members to add..." value={memberSearch} onChange={e => setMemberSearch(e.target.value)}
+                      className="w-full pl-9 border border-[#E9E2CC] rounded-md px-3 py-2 text-sm" />
+                  </div>
+                </div>
+                <div className="max-h-60 overflow-y-auto">
+                  {memberSearch.length < 2 && <p className="px-4 py-3 text-xs text-gray-400">Type at least 2 characters to search</p>}
+                  {memberSearch.length >= 2 && unassignedInDept.slice(0, 20).map(m => (
+                    <div key={m.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-[#F7F3E9] cursor-pointer" onClick={() => assignMember(m)}>
+                      <div>
+                        <p className="text-sm">{m.full_name}</p>
+                        <p className="text-xs text-gray-400">{m.membership_status} {m.department ? `· Currently in: ${m.department}` : ""}</p>
+                      </div>
+                      <Plus className="w-4 h-4 text-[#4A0E52]" />
+                    </div>
+                  ))}
+                  {memberSearch.length >= 2 && unassignedInDept.length === 0 && <p className="px-4 py-3 text-sm text-gray-400">No members found.</p>}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {confirmDel && (
+          <ConfirmDialog name={confirmDel.name} type="department" onConfirm={deleteDept} onCancel={() => setConfirmDel(null)} />
+        )}
+        {selectedProfile && (
+          <MemberProfileModal member={selectedProfile} onClose={() => setSelectedProfile(null)} isAdmin={isAdmin} onEdit={() => setSelectedProfile(null)} />
+        )}
+      </div>
+    );
+  }
+
+  // Department list view
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
+        <h1 className="font-display text-2xl text-[#4A0E52]">Departments</h1>
+        {isAdmin && (
+          <div onClick={() => setShowCreate(true)} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer">
+            <Plus className="w-4 h-4" /> New Department
+          </div>
+        )}
+      </div>
+
+      <div className="relative mb-4">
+        <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+        <input placeholder="Search departments..." value={search} onChange={e => setSearch(e.target.value)}
+          className="w-full pl-9 border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white" />
+      </div>
+
+      {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /> : (
+        <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
+          {filteredDepts.map(d => {
+            const count = members.filter(m => m.department === d.name && !m.archived).length;
+            return (
+              <div key={d.id} onClick={() => setSelected(d)} className="flex items-center justify-between px-4 py-4 cursor-pointer hover:bg-[#F7F3E9]">
+                <div>
+                  <p className="text-sm font-medium">{d.name}</p>
+                  {d.description && <p className="text-xs text-gray-400">{d.description}</p>}
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs bg-[#F7F3E9] text-[#4A0E52] px-2.5 py-1 rounded-full font-medium">{count} members</span>
+                  <span className="text-gray-300">›</span>
+                </div>
+              </div>
+            );
+          })}
+          {filteredDepts.length === 0 && <p className="p-4 text-sm text-gray-400">No departments found.</p>}
+        </div>
+      )}
+
+      {/* Create Department Modal */}
+      {showCreate && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
+          <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-display text-lg text-[#4A0E52]">New Department</h2>
+              <div onClick={() => setShowCreate(false)} className="cursor-pointer"><X className="w-5 h-5" /></div>
+            </div>
+            <label className="block text-xs text-gray-500 mb-3">
+              Department Name *
+              <input value={newDept.name} onChange={e => setNewDept({ ...newDept, name: e.target.value })}
+                placeholder="e.g. Media, Choir, Ushering..."
+                className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm" />
+            </label>
+            <label className="block text-xs text-gray-500 mb-4">
+              Description (optional)
+              <input value={newDept.description} onChange={e => setNewDept({ ...newDept, description: e.target.value })}
+                placeholder="What does this department do?"
+                className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm" />
+            </label>
+            {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+            <div onClick={createDept} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Create Department
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ============================================================
    STAFF VIEW
    ============================================================ */
@@ -1193,6 +1421,7 @@ export default function App() {
       {view === "attendance" && <AttendanceView members={members} />}
       {view === "members" && <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
       {view === "reports" && <ReportsView members={members} />}
+      {view === "departments" && <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
       {view === "staff" && isAdmin && <StaffView />}
     </Shell>
   );
