@@ -508,16 +508,11 @@ function DashboardView({ members, setView, isAdmin }) {
 /* ============================================================
    MEMBER PROFILE MODAL
    ============================================================ */
-function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, onRefresh }) {
-  const [member, setMember] = useState(initialMember);
+function MemberProfileModal({ member, onClose, isAdmin, onEdit }) {
   const [records, setRecords] = useState([]);
   const [allSessions, setAllSessions] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("info");
-  const [editing, setEditing] = useState(false);
-  const [editData, setEditData] = useState({ ...initialMember });
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -532,18 +527,6 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
       setLoading(false);
     })();
   }, [member.id]);
-
-  const saveEdit = async () => {
-    if (!editData.full_name) return;
-    setSaving(true);
-    await supabase.from("members").update(editData).eq("id", member.id);
-    setSaving(false);
-    setSaved(true);
-    setMember(editData);
-    setEditing(false);
-    setTimeout(() => setSaved(false), 2000);
-    if (onRefresh) onRefresh();
-  };
 
   const rate = allSessions > 0 ? Math.round((records.length / allSessions) * 100) : 0;
   const byService = SERVICES.map(s => ({ name: s.label, count: records.filter(r => r.service_type === s.id).length }));
@@ -574,22 +557,21 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
                 <Phone className="w-3 h-3" /> WhatsApp
               </a>
             )}
-            {isAdmin && !editing && (
-              <div onClick={() => { setEditData({ ...member }); setEditing(true); setTab("edit"); }}
-                className="text-xs px-2.5 py-1 rounded-full bg-white/20 text-white cursor-pointer flex items-center gap-1 border border-white/30">
-                <Pencil className="w-3 h-3" /> Edit Profile
+            {isAdmin && (
+              <div onClick={() => { onClose(); onEdit(member); }}
+                className="text-xs px-2.5 py-1 rounded-full bg-white/10 text-white cursor-pointer flex items-center gap-1">
+                <Pencil className="w-3 h-3" /> Edit
               </div>
             )}
-            {saved && <span className="text-xs px-2.5 py-1 rounded-full bg-green-500/30 text-green-200">✓ Saved!</span>}
           </div>
         </div>
 
         {/* Tabs */}
         <div className="flex border-b border-[#E9E2CC]">
-          {["info", "attendance", ...(isAdmin ? ["edit"] : [])].map(t => (
-            <div key={t} onClick={() => { setTab(t); if (t === "edit") { setEditData({ ...member }); setEditing(true); } else setEditing(false); }}
-              className={`flex-1 text-center py-3 text-sm cursor-pointer font-medium ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
-              {t === "info" ? "Info" : t === "attendance" ? "Attendance" : "✏️ Edit"}
+          {["info", "attendance"].map(t => (
+            <div key={t} onClick={() => setTab(t)}
+              className={`flex-1 text-center py-3 text-sm cursor-pointer capitalize font-medium ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
+              {t === "info" ? "Personal Info" : "Attendance"}
             </div>
           ))}
         </div>
@@ -621,25 +603,6 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
                   <p className="text-sm">{member.notes}</p>
                 </div>
               )}
-            </div>
-          ) : tab === "edit" ? (
-            <div>
-              <Field label="Full name" value={editData.full_name} onChange={v => setEditData({ ...editData, full_name: v })} />
-              <Field label="Phone" value={editData.phone} onChange={v => setEditData({ ...editData, phone: v })} />
-              <Field label="Email" value={editData.email} onChange={v => setEditData({ ...editData, email: v })} />
-              <Field label="Address" value={editData.address} onChange={v => setEditData({ ...editData, address: v })} />
-              <Field label="Date of Birth" type="date" value={editData.date_of_birth} onChange={v => setEditData({ ...editData, date_of_birth: v })} />
-              <Field label="Gender" value={editData.gender} onChange={v => setEditData({ ...editData, gender: v })} />
-              <Field label="Marital Status" value={editData.marital_status} onChange={v => setEditData({ ...editData, marital_status: v })} />
-              <Field label="Occupation" value={editData.occupation} onChange={v => setEditData({ ...editData, occupation: v })} />
-              <Field label="Department" value={editData.department} onChange={v => setEditData({ ...editData, department: v })} />
-              <Field label="Date Joined" type="date" value={editData.date_joined} onChange={v => setEditData({ ...editData, date_joined: v })} />
-              <Field label="Membership Status" type="select" value={editData.membership_status} onChange={v => setEditData({ ...editData, membership_status: v })} />
-              <Field label="Notes" value={editData.notes} onChange={v => setEditData({ ...editData, notes: v })} />
-              <div onClick={saveEdit} className="mt-2 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
-                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                Save Changes
-              </div>
             </div>
           ) : (
             <div>
