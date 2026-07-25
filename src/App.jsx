@@ -232,11 +232,75 @@ function Shell({ view, setView, isAdmin, signOut, children }) {
 }
 
 /* ============================================================
+   MEMBER LIST OVERLAY — opens from dashboard card clicks
+   ============================================================ */
+function MemberListOverlay({ title, subtitle, members, extra, onClose, onSelectMember }) {
+  const [search, setSearch] = useState("");
+  const filtered = members.filter(m => m.full_name.toLowerCase().includes(search.toLowerCase()));
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-30">
+      <div className="bg-white w-full md:max-w-lg rounded-t-2xl md:rounded-xl max-h-[85vh] flex flex-col shadow-2xl">
+        {/* Header */}
+        <div className="bg-[#4A0E52] text-white px-5 py-4 rounded-t-2xl md:rounded-t-xl flex items-start justify-between">
+          <div>
+            <h2 className="font-display text-lg">{title}</h2>
+            {subtitle && <p className="text-[#C9A5D6] text-sm">{subtitle}</p>}
+          </div>
+          <div onClick={onClose} className="cursor-pointer mt-0.5"><X className="w-5 h-5" /></div>
+        </div>
+        {/* Search */}
+        <div className="px-4 py-3 border-b border-[#E9E2CC]">
+          <div className="relative">
+            <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+            <input placeholder="Search..." value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full pl-9 border border-[#E9E2CC] rounded-md px-3 py-2 text-sm" />
+          </div>
+        </div>
+        {/* List */}
+        <div className="flex-1 overflow-y-auto divide-y divide-[#F1ECDE]">
+          {filtered.length === 0 && <p className="p-5 text-sm text-gray-400 text-center">No members found.</p>}
+          {filtered.map((m, i) => (
+            <div key={m.id || i} className="flex items-center justify-between px-4 py-3">
+              <div className="flex-1 cursor-pointer" onClick={() => onSelectMember && onSelectMember(m)}>
+                <p className="text-sm font-medium hover:text-[#4A0E52]">{m.full_name}</p>
+                <div className="flex items-center gap-2 flex-wrap">
+                  {m.membership_status && <span className="text-xs text-gray-400">{m.membership_status}</span>}
+                  {m.department && <span className="text-xs text-gray-400">· {m.department}</span>}
+                  {extra && extra[m.id] && <span className="text-xs text-[#4A0E52] bg-[#F7F3E9] px-2 py-0.5 rounded-full">{extra[m.id]}</span>}
+                  {m.date_of_birth && <span className="text-xs text-pink-500">🎂 {new Date(m.date_of_birth).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>}
+                </div>
+              </div>
+              <div className="flex gap-1 items-center">
+                {m.phone && (
+                  <a href={"https://wa.me/234" + m.phone.replace(/^0/,"")} target="_blank" rel="noopener noreferrer"
+                    className="p-2 text-green-600" onClick={e => e.stopPropagation()}>
+                    <Phone className="w-4 h-4" />
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {/* Footer count */}
+        <div className="px-5 py-3 border-t border-[#E9E2CC] text-xs text-gray-400 text-center">
+          {filtered.length} member{filtered.length !== 1 ? "s" : ""}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ============================================================
    DASHBOARD VIEW
    ============================================================ */
 function DashboardView({ members, setView, isAdmin }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [overlay, setOverlay] = useState(null); // { title, subtitle, members, extra }
+  const [selectedMember, setSelectedMember] = useState(null);
+
+  const openOverlay = (title, subtitle, list, extra) => setOverlay({ title, subtitle, members: list, extra: extra || {} });
+  const closeOverlay = () => setOverlay(null);
 
   useEffect(() => {
     (async () => {
@@ -292,14 +356,15 @@ function DashboardView({ members, setView, isAdmin }) {
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         {[
-          { label: "Total Members", value: members.length, color: "text-[#4A0E52]" },
-          { label: "Active", value: activeMembers, color: "text-green-600" },
-          { label: "New Converts", value: newConverts, color: "text-[#C9A227]" },
-          { label: "Visitors", value: visitors, color: "text-blue-600" },
+          { label: "Total Members", value: members.length, color: "text-[#4A0E52]", list: members, sub: "All church members" },
+          { label: "Active", value: activeMembers, color: "text-green-600", list: members.filter(m=>m.membership_status==="Active"), sub: "Active members" },
+          { label: "New Converts", value: newConverts, color: "text-[#C9A227]", list: members.filter(m=>m.membership_status==="New Convert"), sub: "New converts" },
+          { label: "Visitors", value: visitors, color: "text-blue-600", list: members.filter(m=>m.membership_status==="Visitor"), sub: "Visitors" },
         ].map(s => (
-          <div key={s.label} className="bg-white rounded-lg border border-[#E9E2CC] p-4">
+          <div key={s.label} onClick={() => openOverlay(s.label, s.sub, s.list)} className="bg-white rounded-lg border border-[#E9E2CC] p-4 cursor-pointer hover:border-[#4A0E52] hover:shadow-sm transition-all">
             <p className="text-xs text-gray-400">{s.label}</p>
             <p className={`text-2xl font-display ${s.color}`}>{s.value}</p>
+            <p className="text-xs text-gray-300 mt-1">Tap to view →</p>
           </div>
         ))}
       </div>
@@ -330,19 +395,23 @@ function DashboardView({ members, setView, isAdmin }) {
           </h2>
           {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#4A0E52]" /> :
             needsFollowUp.length === 0 ? <p className="text-sm text-gray-400">All active members attended recently.</p> :
-            <ul className="space-y-2">
-              {needsFollowUp.map(m => (
-                <li key={m.id} className="flex items-center justify-between text-sm">
-                  <span>{m.full_name}</span>
-                  {m.phone && (
-                    <a href={`https://wa.me/234${m.phone.replace(/^0/, "")}`} target="_blank" rel="noopener noreferrer"
-                      className="text-green-600 text-xs flex items-center gap-1">
-                      <Phone className="w-3 h-3" /> WhatsApp
-                    </a>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2 mb-3">
+                {needsFollowUp.map(m => (
+                  <li key={m.id} className="flex items-center justify-between text-sm cursor-pointer hover:text-[#4A0E52]" onClick={() => setSelectedMember(m)}>
+                    <span>{m.full_name}</span>
+                    {m.phone && (
+                      <a href={"https://wa.me/234"+m.phone.replace(/^0/,"")} target="_blank" rel="noopener noreferrer"
+                        className="text-green-600 text-xs flex items-center gap-1" onClick={e=>e.stopPropagation()}>
+                        <Phone className="w-3 h-3" /> WhatsApp
+                      </a>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <div onClick={() => openOverlay("Needs Follow-up", "Active members not seen in 30+ days", members.filter(m=>m.membership_status==="Active" && !recentAttendees.has(m.id)))}
+                className="text-xs text-[#4A0E52] cursor-pointer font-medium">View all {members.filter(m=>m.membership_status==="Active" && !recentAttendees.has(m.id)).length} →</div>
+            </>
           }
         </div>
 
@@ -352,16 +421,20 @@ function DashboardView({ members, setView, isAdmin }) {
             <Star className="w-4 h-4 text-[#C9A227]" /> Repeat Visitors
           </h2>
           {repeatVisitors.length === 0 ? <p className="text-sm text-gray-400">No repeat visitors yet.</p> :
-            <ul className="space-y-2">
-              {repeatVisitors.map(m => (
-                <li key={m.id} className="flex items-center justify-between text-sm">
-                  <span>{m.full_name}</span>
-                  <span className="text-xs text-[#C9A227] bg-[#FEF9EC] px-2 py-0.5 rounded-full">
-                    {records.filter(r => r.member_id === m.id).length} visits
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2 mb-3">
+                {repeatVisitors.slice(0,4).map(m => (
+                  <li key={m.id} className="flex items-center justify-between text-sm cursor-pointer hover:text-[#4A0E52]" onClick={() => setSelectedMember(m)}>
+                    <span>{m.full_name}</span>
+                    <span className="text-xs text-[#C9A227] bg-[#FEF9EC] px-2 py-0.5 rounded-full">
+                      {records.filter(r => r.member_id === m.id).length} visits
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              <div onClick={() => openOverlay("Repeat Visitors", "Visited 2+ times — ready to convert?", repeatVisitors, Object.fromEntries(repeatVisitors.map(m=>[m.id, records.filter(r=>r.member_id===m.id).length+" visits"])))}
+                className="text-xs text-[#4A0E52] cursor-pointer font-medium">View all {repeatVisitors.length} →</div>
+            </>
           }
         </div>
 
@@ -372,14 +445,18 @@ function DashboardView({ members, setView, isAdmin }) {
           </h2>
           {birthdayMembers.length === 0 ?
             <p className="text-sm text-gray-400">No birthdays recorded this month. Add dates of birth in member profiles.</p> :
-            <ul className="space-y-2">
-              {birthdayMembers.map(m => (
-                <li key={m.id} className="flex items-center justify-between text-sm">
-                  <span>{m.full_name}</span>
-                  <span className="text-xs text-gray-400">{new Date(m.date_of_birth).toLocaleDateString("en-US", {month:"short", day:"numeric"})}</span>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-2 mb-3">
+                {birthdayMembers.slice(0,4).map(m => (
+                  <li key={m.id} className="flex items-center justify-between text-sm cursor-pointer hover:text-[#4A0E52]" onClick={() => setSelectedMember(m)}>
+                    <span>{m.full_name}</span>
+                    <span className="text-xs text-pink-500">🎂 {new Date(m.date_of_birth).toLocaleDateString("en-US",{month:"short",day:"numeric"})}</span>
+                  </li>
+                ))}
+              </ul>
+              <div onClick={() => openOverlay("Birthdays This Month","Members celebrating this month",birthdayMembers)}
+                className="text-xs text-[#4A0E52] cursor-pointer font-medium">View all {birthdayMembers.length} →</div>
+            </>
           }
         </div>
 
@@ -393,14 +470,36 @@ function DashboardView({ members, setView, isAdmin }) {
               members.filter(m => m.department && m.department !== "" && m.department !== "None")
                 .reduce((acc, m) => ({ ...acc, [m.department]: (acc[m.department] || 0) + 1 }), {})
             ).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([dept, count]) => (
-              <div key={dept} className="flex items-center justify-between text-sm">
+              <div key={dept} onClick={() => openOverlay(dept, "Department members", members.filter(m=>m.department===dept))}
+                className="flex items-center justify-between text-sm cursor-pointer hover:bg-[#F7F3E9] px-2 py-1 rounded-lg -mx-2 transition-colors">
                 <span>{dept}</span>
-                <span className="text-xs bg-[#F7F3E9] text-[#4A0E52] px-2 py-0.5 rounded-full font-medium">{count}</span>
+                <span className="text-xs bg-[#F7F3E9] text-[#4A0E52] px-2 py-0.5 rounded-full font-medium">{count} →</span>
               </div>
             ))}
           </div>
         </div>
       </div>
+      {/* Overlay for clicked dashboard cards */}
+      {overlay && (
+        <MemberListOverlay
+          title={overlay.title}
+          subtitle={overlay.subtitle}
+          members={overlay.members}
+          extra={overlay.extra}
+          onClose={closeOverlay}
+          onSelectMember={(m) => { closeOverlay(); setSelectedMember(m); }}
+        />
+      )}
+
+      {/* Member profile from dashboard item click */}
+      {selectedMember && (
+        <MemberProfileModal
+          member={selectedMember}
+          onClose={() => setSelectedMember(null)}
+          isAdmin={isAdmin}
+          onEdit={() => setSelectedMember(null)}
+        />
+      )}
     </div>
   );
 }
