@@ -279,7 +279,7 @@ function Shell({ view, setView, isAdmin, signOut, children }) {
     { id: "members", label: "Members", icon: Users },
     { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "departments", label: "Depts", icon: BookOpen },
-    { id: "finance", label: "Finance", icon: DollarSign },
+    ...(!isAdmin ? [{ id: "finance", label: "Finance", icon: DollarSign }] : []),
     ...(isAdmin ? [{ id: "staff", label: "Secretariat", icon: UserCog }] : [])
   ];
   return (
@@ -463,12 +463,10 @@ function DashboardView({ members, setView, isAdmin, profile }) {
           <CalendarCheck className="w-5 h-5 text-[#F3D98B]" />
           <span className="text-sm font-medium">Take Attendance</span>
         </div>
-        {isAdmin && (
-          <div onClick={() => setView("members")} className="bg-white border border-[#E9E2CC] rounded-lg p-4 cursor-pointer flex items-center gap-3 hover:bg-[#F7F3E9]">
-            <Plus className="w-5 h-5 text-[#4A0E52]" />
-            <span className="text-sm font-medium text-[#4A0E52]">Add Member</span>
-          </div>
-        )}
+        <div onClick={() => setView("members")} className="bg-white border border-[#E9E2CC] rounded-lg p-4 cursor-pointer flex items-center gap-3 hover:bg-[#F7F3E9]">
+          <Plus className="w-5 h-5 text-[#4A0E52]" />
+          <span className="text-sm font-medium text-[#4A0E52]">Add Member</span>
+        </div>
         <div onClick={() => setView("reports")} className="bg-white border border-[#E9E2CC] rounded-lg p-4 cursor-pointer flex items-center gap-3 hover:bg-[#F7F3E9]">
           <BarChart3 className="w-5 h-5 text-[#4A0E52]" />
           <span className="text-sm font-medium text-[#4A0E52]">View Reports</span>
@@ -661,7 +659,7 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
                 <Phone className="w-3 h-3" /> WhatsApp
               </a>
             )}
-            {isAdmin && !editing && (
+            {!editing && (
               <div onClick={() => { setEditData({ ...member }); setEditing(true); setTab("edit"); }}
                 className="text-xs px-2.5 py-1 rounded-full bg-white/20 text-white cursor-pointer flex items-center gap-1 border border-white/30">
                 <Pencil className="w-3 h-3" /> Edit Profile
@@ -673,7 +671,7 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
 
         {/* Tabs */}
         <div className="flex border-b border-[#E9E2CC]">
-          {["info", "attendance", ...(isAdmin ? ["edit"] : [])].map(t => (
+          {["info", "attendance", "edit"].map(t => (
             <div key={t} onClick={() => { setTab(t); if (t === "edit") { setEditData({ ...member }); setEditing(true); } else setEditing(false); }}
               className={`flex-1 text-center py-3 text-sm cursor-pointer font-medium ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
               {t === "info" ? "Info" : t === "attendance" ? "Attendance" : "✏️ Edit"}
@@ -947,16 +945,14 @@ function MembersView({ members, refresh, isAdmin }) {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="font-display text-2xl text-[#4A0E52]">Members</h1>
-        {isAdmin && (
-          <div className="flex gap-2">
-            <div onClick={() => setShowImport(true)} className="flex items-center gap-1 border border-[#4A0E52] text-[#4A0E52] rounded-md px-3 py-2 text-sm cursor-pointer">
-              <Upload className="w-4 h-4" /> Import
-            </div>
-            <div onClick={() => setEditing({ ...emptyMember })} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer">
-              <Plus className="w-4 h-4" /> Add
-            </div>
+        <div className="flex gap-2">
+          <div onClick={() => setShowImport(true)} className="flex items-center gap-1 border border-[#4A0E52] text-[#4A0E52] rounded-md px-3 py-2 text-sm cursor-pointer">
+            <Upload className="w-4 h-4" /> Import
           </div>
-        )}
+          <div onClick={() => setEditing({ ...emptyMember })} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer">
+            <Plus className="w-4 h-4" /> Add
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
@@ -996,12 +992,8 @@ function MembersView({ members, refresh, isAdmin }) {
                   <Phone className="w-4 h-4" />
                 </a>
               )}
-              {isAdmin && (
-                <>
-                  <div onClick={() => setEditing(m)} className="p-2 cursor-pointer text-[#4A0E52]"><Pencil className="w-4 h-4" /></div>
-                  <div onClick={() => requestDelete(m)} className="p-2 cursor-pointer text-red-500"><Archive className="w-4 h-4" /></div>
-                </>
-              )}
+              <div onClick={() => setEditing(m)} className="p-2 cursor-pointer text-[#4A0E52]"><Pencil className="w-4 h-4" /></div>
+              <div onClick={() => requestDelete(m)} className="p-2 cursor-pointer text-red-500"><Archive className="w-4 h-4" /></div>
             </div>
           </div>
         ))}
@@ -1308,18 +1300,16 @@ function DepartmentsView({ members, refresh, isAdmin }) {
                     <Phone className="w-4 h-4" />
                   </a>
                 )}
-                {isAdmin && (
-                  <div onClick={() => removeMember(m)} className="p-2 cursor-pointer text-red-400" title="Remove from department">
-                    <X className="w-4 h-4" />
-                  </div>
-                )}
+                <div onClick={() => removeMember(m)} className="p-2 cursor-pointer text-red-400" title="Remove from department">
+                  <X className="w-4 h-4" />
+                </div>
               </div>
             </div>
           ))}
         </div>
 
         {/* Add members to department */}
-        {isAdmin && (
+        {true && (
           <div className="bg-white rounded-lg border border-[#E9E2CC]">
             <div className="px-4 py-3 border-b border-[#F1ECDE] flex items-center justify-between cursor-pointer"
               onClick={() => setAssigningMember(!assigningMember)}>
@@ -1750,6 +1740,10 @@ function OwnerPasswordSettings() {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [removingKey, setRemovingKey] = useState(null); // which feature is being removed (re-auth step)
+  const [loginPassword, setLoginPassword] = useState("");
+  const [reAuthError, setReAuthError] = useState("");
+  const [reAuthChecking, setReAuthChecking] = useState(false);
 
   const loadLocks = async () => {
     const [{ data: fin }, { data: dl }] = await Promise.all([
@@ -1772,8 +1766,22 @@ function OwnerPasswordSettings() {
     loadLocks();
   };
 
-  const removePassword = async (key) => {
-    await supabase.rpc("remove_feature_password", { key });
+  // Step 1: owner clicks Remove — open re-auth prompt instead of removing immediately
+  const requestRemove = (key) => {
+    setRemovingKey(key); setLoginPassword(""); setReAuthError("");
+  };
+
+  // Step 2: owner confirms with their actual login password before the removal proceeds
+  const confirmRemoveWithReAuth = async () => {
+    if (!loginPassword) { setReAuthError("Enter your login password to confirm."); return; }
+    setReAuthChecking(true); setReAuthError("");
+    const { data: userData } = await supabase.auth.getUser();
+    const email = userData?.user?.email;
+    const { error: authErr } = await supabase.auth.signInWithPassword({ email, password: loginPassword });
+    setReAuthChecking(false);
+    if (authErr) { setReAuthError("Incorrect login password."); return; }
+    await supabase.rpc("remove_feature_password", { key: removingKey });
+    setRemovingKey(null); setLoginPassword("");
     loadLocks();
   };
 
@@ -1805,7 +1813,7 @@ function OwnerPasswordSettings() {
                   {locks[f.key] ? "Change" : "Set"}
                 </div>
                 {locks[f.key] && (
-                  <div onClick={() => removePassword(f.key)} className="text-xs border border-red-300 text-red-500 rounded-md px-2.5 py-1.5 cursor-pointer">
+                  <div onClick={() => requestRemove(f.key)} className="text-xs border border-red-300 text-red-500 rounded-md px-2.5 py-1.5 cursor-pointer">
                     Remove
                   </div>
                 )}
@@ -1831,6 +1839,28 @@ function OwnerPasswordSettings() {
             {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
             <div onClick={savePassword} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save Password
+            </div>
+          </div>
+        </div>
+      )}
+
+      {removingKey && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-display text-lg text-[#4A0E52] flex items-center gap-2"><Lock className="w-4 h-4" /> Confirm Removal</h2>
+              <div onClick={() => setRemovingKey(null)} className="cursor-pointer"><X className="w-5 h-5" /></div>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              For security, removing the <span className="font-medium capitalize">{removingKey}</span> password requires your own login password.
+            </p>
+            <input type="password" placeholder="Your login password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && confirmRemoveWithReAuth()}
+              autoFocus
+              className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3" />
+            {reAuthError && <p className="text-xs text-red-600 mb-3">{reAuthError}</p>}
+            <div onClick={confirmRemoveWithReAuth} className="bg-red-600 text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
+              {reAuthChecking ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Confirm & Remove
             </div>
           </div>
         </div>
@@ -1896,7 +1926,7 @@ function StaffView({ isOwner }) {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="font-display text-2xl text-[#4A0E52]">SCC Secretariat</h1>
-        <div onClick={() => setShowAdd(true)} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Add Admin</div>
+        <div onClick={() => setShowAdd(true)} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Add Staff</div>
       </div>
       {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /> : (
         <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
@@ -1919,7 +1949,7 @@ function StaffView({ isOwner }) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-lg text-[#4A0E52]">Add Admin</h2>
+              <h2 className="font-display text-lg text-[#4A0E52]">Add Staff</h2>
               <div onClick={() => setShowAdd(false)} className="cursor-pointer"><X className="w-5 h-5" /></div>
             </div>
             <Field label="Full name" value={form.full_name} onChange={(v) => setForm({ ...form, full_name: v })} />
@@ -1932,7 +1962,7 @@ function StaffView({ isOwner }) {
             </label>
             {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
             <div onClick={addStaff} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Add Admin
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Add Staff
             </div>
           </div>
         </div>
@@ -1969,7 +1999,7 @@ export default function App() {
       {view === "members" && <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
       {view === "reports" && <ReportsView members={members} />}
       {view === "departments" && <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
-      {view === "finance" && <FinanceView isOwner={isOwner} />}
+      {view === "finance" && !isAdmin && <FinanceView isOwner={isOwner} />}
       {view === "staff" && isAdmin && <StaffView isOwner={isOwner} />}
     </Shell>
   );
