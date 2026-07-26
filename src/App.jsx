@@ -2,12 +2,13 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 import {
   Users, CalendarCheck, BarChart3, Search, Plus, X, Trash2, Pencil,
   Save, Loader2, TrendingDown, LogOut, Upload, Download, UserCog,
-  Home, BookOpen, Archive, WhatsApp, Phone, Mail, MapPin, Briefcase,
-  Heart, Star, AlertTriangle, CheckCheck, ChevronDown, Printer, RefreshCw
+  Home, BookOpen, Archive, Phone, Mail, MapPin, Briefcase,
+  Heart, Star, AlertTriangle, CheckCheck, ChevronDown, Printer, RefreshCw,
+  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer
+  ResponsiveContainer, PieChart, Pie, Cell, Legend
 } from "recharts";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
@@ -86,6 +87,91 @@ function UndoToast({ message, onUndo, onDismiss }) {
 }
 
 /* ---- Field helper ---- */
+/* ---- Password Gate — full-page lock for protected features ---- */
+function PasswordGate({ featureKey, title, onUnlock, onCancel }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+  const [show, setShow] = useState(false);
+
+  const submit = async () => {
+    setChecking(true); setError("");
+    const { data, error: err } = await supabase.rpc("verify_feature_password", { key: featureKey, attempt: password });
+    setChecking(false);
+    if (err) { setError("Something went wrong. Try again."); return; }
+    if (data === true) { onUnlock(); } else { setError("Incorrect password."); }
+  };
+
+  return (
+    <div className="min-h-[60vh] flex items-center justify-center p-6">
+      <div className="w-full max-w-sm bg-white rounded-xl border border-[#E9E2CC] p-8 text-center shadow-sm">
+        <div className="w-14 h-14 bg-[#F7F3E9] rounded-full flex items-center justify-center mx-auto mb-4">
+          <Lock className="w-6 h-6 text-[#4A0E52]" />
+        </div>
+        <h2 className="font-display text-lg text-[#4A0E52] mb-1">{title}</h2>
+        <p className="text-sm text-gray-400 mb-5">This section is password protected.</p>
+        <div className="relative mb-3">
+          <input
+            type={show ? "text" : "password"}
+            placeholder="Enter password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm pr-10"
+          />
+          <div onClick={() => setShow(!show)} className="absolute right-3 top-2.5 cursor-pointer text-gray-400">
+            {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          </div>
+        </div>
+        {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+        <div onClick={submit} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2 mb-2">
+          {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Lock className="w-4 h-4" />} Unlock
+        </div>
+        {onCancel && <div onClick={onCancel} className="text-xs text-gray-400 cursor-pointer">Cancel</div>}
+      </div>
+    </div>
+  );
+}
+
+/* ---- Password Prompt Modal — for one-off protected actions like downloads ---- */
+function PasswordPromptModal({ featureKey, title, onSuccess, onClose }) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  const submit = async () => {
+    setChecking(true); setError("");
+    const { data, error: err } = await supabase.rpc("verify_feature_password", { key: featureKey, attempt: password });
+    setChecking(false);
+    if (err) { setError("Something went wrong."); return; }
+    if (data === true) { onSuccess(); } else { setError("Incorrect password."); }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40">
+      <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="font-display text-lg text-[#4A0E52] flex items-center gap-2"><Lock className="w-4 h-4" /> {title}</h2>
+          <div onClick={onClose} className="cursor-pointer"><X className="w-5 h-5" /></div>
+        </div>
+        <input
+          type="password"
+          placeholder="Enter password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && submit()}
+          autoFocus
+          className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3"
+        />
+        {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+        <div onClick={submit} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
+          {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Confirm
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, value, onChange, type = "text" }) {
   return (
     <label className="block text-xs text-gray-500 mb-3">
@@ -193,7 +279,8 @@ function Shell({ view, setView, isAdmin, signOut, children }) {
     { id: "members", label: "Members", icon: Users },
     { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "departments", label: "Depts", icon: BookOpen },
-    ...(isAdmin ? [{ id: "staff", label: "Staff", icon: UserCog }] : [])
+    { id: "finance", label: "Finance", icon: DollarSign },
+    ...(isAdmin ? [{ id: "staff", label: "Secretariat", icon: UserCog }] : [])
   ];
   return (
     <div className="min-h-screen bg-[#F7F3E9] flex">
@@ -210,7 +297,7 @@ function Shell({ view, setView, isAdmin, signOut, children }) {
           ); })}
         </nav>
         <div className="px-6 py-4 border-t border-white/10 text-xs">
-          <p className="mb-2 text-[#C9A5D6]">{isAdmin ? "Admin" : "Staff"}</p>
+          <p className="mb-2 text-[#C9A5D6]">{isAdmin ? "Admin" : "Secretariat"}</p>
           <div onClick={signOut} className="flex items-center gap-2 cursor-pointer hover:text-[#F3D98B]"><LogOut className="w-3.5 h-3.5" /> Sign out</div>
         </div>
       </aside>
@@ -294,7 +381,7 @@ function MemberListOverlay({ title, subtitle, members, extra, onClose, onSelectM
 /* ============================================================
    DASHBOARD VIEW
    ============================================================ */
-function DashboardView({ members, setView, isAdmin }) {
+function DashboardView({ members, setView, isAdmin, profile }) {
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [overlay, setOverlay] = useState(null); // { title, subtitle, members, extra }
@@ -350,7 +437,7 @@ function DashboardView({ members, setView, isAdmin }) {
       {/* Header */}
       <div className="bg-[#4A0E52] rounded-xl p-6 mb-6 text-white">
         <p className="text-[#C9A5D6] text-sm mb-1">{dayName}</p>
-        <h1 className="font-display text-2xl mb-1">Welcome, Pastor</h1>
+        <h1 className="font-display text-2xl mb-1">Welcome, {profile?.full_name || "there"}</h1>
         <p className="text-[#C9A5D6] text-sm">{dateDisplay}</p>
       </div>
 
@@ -729,6 +816,8 @@ function AttendanceView({ members }) {
     setTimeout(() => setSaved(false), 3000);
   };
 
+  const [showDownloadAuth, setShowDownloadAuth] = useState(false);
+
   const handlePrint = () => {
     const presentMembers = filtered.filter(m => present[m.id]);
     const win = window.open("", "_blank");
@@ -788,10 +877,18 @@ function AttendanceView({ members }) {
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCheck className="w-4 h-4" /> : <Save className="w-4 h-4" />}
           {saved ? "Saved!" : "Save Attendance"}
         </div>
-        <div onClick={handlePrint} className="inline-flex items-center gap-2 border border-[#4A0E52] text-[#4A0E52] rounded-md px-5 py-2.5 text-sm cursor-pointer">
+        <div onClick={() => setShowDownloadAuth(true)} className="inline-flex items-center gap-2 border border-[#4A0E52] text-[#4A0E52] rounded-md px-5 py-2.5 text-sm cursor-pointer">
           <Printer className="w-4 h-4" /> Print Register
         </div>
       </div>
+      {showDownloadAuth && (
+        <PasswordPromptModal
+          featureKey="download"
+          title="Confirm Print"
+          onSuccess={() => { setShowDownloadAuth(false); handlePrint(); }}
+          onClose={() => setShowDownloadAuth(false)}
+        />
+      )}
     </div>
   );
 }
@@ -962,6 +1059,7 @@ function MembersView({ members, refresh, isAdmin }) {
 function BulkImportModal({ onClose, onDone }) {
   const [rows, setRows] = useState([]);
   const [importing, setImporting] = useState(false);
+  const [showDownloadAuth, setShowDownloadAuth] = useState(false);
   const handleFile = (e) => {
     const file = e.target.files[0]; if (!file) return;
     Papa.parse(file, { header: true, skipEmptyLines: true, complete: (res) => setRows(res.data) });
@@ -985,12 +1083,20 @@ function BulkImportModal({ onClose, onDone }) {
           <h2 className="font-display text-lg text-[#4A0E52]">Bulk Import Members</h2>
           <div onClick={onClose} className="cursor-pointer"><X className="w-5 h-5" /></div>
         </div>
-        <div onClick={downloadTemplate} className="flex items-center gap-2 text-sm text-[#4A0E52] cursor-pointer mb-4"><Download className="w-4 h-4" /> Download CSV template</div>
+        <div onClick={() => setShowDownloadAuth(true)} className="flex items-center gap-2 text-sm text-[#4A0E52] cursor-pointer mb-4"><Download className="w-4 h-4" /> Download CSV template</div>
         <input type="file" accept=".csv" onChange={handleFile} className="text-sm mb-3" />
         {rows.length > 0 && <p className="text-xs text-gray-500 mb-3">{rows.length} rows detected.</p>}
         <div onClick={doImport} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
           {importing ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Import {rows.length || ""} Members
         </div>
+        {showDownloadAuth && (
+          <PasswordPromptModal
+            featureKey="download"
+            title="Confirm Download"
+            onSuccess={() => { setShowDownloadAuth(false); downloadTemplate(); }}
+            onClose={() => setShowDownloadAuth(false)}
+          />
+        )}
       </div>
     </div>
   );
@@ -1330,7 +1436,410 @@ function DepartmentsView({ members, refresh, isAdmin }) {
 /* ============================================================
    STAFF VIEW
    ============================================================ */
-function StaffView() {
+
+/* ============================================================
+   FINANCE VIEW — password protected, income/expense, own reports
+   ============================================================ */
+const FINANCE_COLORS = ["#4A0E52", "#C9A227", "#63177A", "#A6423A", "#3B82F6", "#10B981", "#F59E0B", "#8B5CF6"];
+
+function FinanceView({ isOwner }) {
+  const [unlocked, setUnlocked] = useState(false);
+
+  if (!unlocked) {
+    return <PasswordGate featureKey="finance" title="Finance" onUnlock={() => setUnlocked(true)} />;
+  }
+  return <FinanceDashboard isOwner={isOwner} onLock={() => setUnlocked(false)} />;
+}
+
+function FinanceDashboard({ isOwner, onLock }) {
+  const [tab, setTab] = useState("overview");
+  const [categories, setCategories] = useState([]);
+  const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showAddTx, setShowAddTx] = useState(null); // "income" | "expense" | null
+  const [showAddCat, setShowAddCat] = useState(null);
+  const [newCatName, setNewCatName] = useState("");
+  const [txForm, setTxForm] = useState({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10) });
+  const [confirmDeleteTx, setConfirmDeleteTx] = useState(null);
+  const [confirmDeleteCat, setConfirmDeleteCat] = useState(null);
+  const [range, setRange] = useState(() => ({ ...presetToRange("This month"), label: "This month" }));
+
+  const load = async () => {
+    setLoading(true);
+    const [{ data: cats }, { data: txs }] = await Promise.all([
+      supabase.from("finance_categories").select("*").order("name"),
+      supabase.from("finance_transactions").select("*, finance_categories(name)").order("transaction_date", { ascending: false })
+    ]);
+    setCategories(cats || []);
+    setTransactions(txs || []);
+    setLoading(false);
+  };
+  useEffect(() => { load(); }, []);
+
+  const filteredTx = transactions.filter(t => t.transaction_date >= range.start && t.transaction_date <= range.end);
+  const totalIncome = filteredTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
+  const totalExpense = filteredTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
+  const balance = totalIncome - totalExpense;
+
+  const incomeCategories = categories.filter(c => c.type === "income");
+  const expenseCategories = categories.filter(c => c.type === "expense");
+
+  const fmt = (n) => "₦" + Number(n).toLocaleString();
+
+  const addCategory = async () => {
+    if (!newCatName.trim()) return;
+    await supabase.from("finance_categories").insert([{ type: showAddCat, name: newCatName.trim() }]);
+    setNewCatName(""); setShowAddCat(null); load();
+  };
+
+  const deleteCategory = async () => {
+    await supabase.from("finance_categories").delete().eq("id", confirmDeleteCat.id);
+    setConfirmDeleteCat(null); load();
+  };
+
+  const addTransaction = async () => {
+    if (!txForm.category_id || !txForm.amount) return;
+    const { data: ud } = await supabase.auth.getUser();
+    await supabase.from("finance_transactions").insert([{
+      type: showAddTx, category_id: txForm.category_id, amount: Number(txForm.amount),
+      description: txForm.description, transaction_date: txForm.transaction_date, created_by: ud?.user?.id
+    }]);
+    setTxForm({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10) });
+    setShowAddTx(null); load();
+  };
+
+  const deleteTransaction = async () => {
+    await supabase.from("finance_transactions").delete().eq("id", confirmDeleteTx.id);
+    setConfirmDeleteTx(null); load();
+  };
+
+  // Expense by category for pie chart
+  const expenseByCategory = useMemo(() => {
+    const map = {};
+    filteredTx.filter(t => t.type === "expense").forEach(t => {
+      const name = t.finance_categories?.name || "Uncategorized";
+      map[name] = (map[name] || 0) + Number(t.amount);
+    });
+    return Object.entries(map).map(([name, value]) => ({ name, value }));
+  }, [filteredTx]);
+
+  // Income vs Expense over time (by month)
+  const monthlyTrend = useMemo(() => {
+    const map = {};
+    filteredTx.forEach(t => {
+      const month = t.transaction_date.slice(0, 7);
+      if (!map[month]) map[month] = { month, income: 0, expense: 0 };
+      map[month][t.type] += Number(t.amount);
+    });
+    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
+  }, [filteredTx]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+        <h1 className="font-display text-2xl text-[#4A0E52] flex items-center gap-2"><DollarSign className="w-6 h-6" /> Finance</h1>
+        <div className="flex items-center gap-2">
+          <DateRangePicker range={range} onChange={setRange} />
+          <div onClick={onLock} className="text-xs border border-[#E9E2CC] rounded-md px-3 py-2 cursor-pointer flex items-center gap-1 text-gray-500">
+            <Lock className="w-3.5 h-3.5" /> Lock
+          </div>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-2 mb-4 border-b border-[#E9E2CC]">
+        {["overview", "transactions", "categories", "reports"].map(t => (
+          <div key={t} onClick={() => setTab(t)}
+            className={`px-3 py-2 text-sm cursor-pointer capitalize font-medium ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
+            {t}
+          </div>
+        ))}
+      </div>
+
+      {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /> : (
+        <>
+          {tab === "overview" && (
+            <div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div className="bg-green-50 rounded-lg border border-green-100 p-4">
+                  <p className="text-xs text-green-700">Total Income</p>
+                  <p className="text-2xl font-display text-green-700">{fmt(totalIncome)}</p>
+                </div>
+                <div className="bg-red-50 rounded-lg border border-red-100 p-4">
+                  <p className="text-xs text-red-700">Total Expense</p>
+                  <p className="text-2xl font-display text-red-700">{fmt(totalExpense)}</p>
+                </div>
+                <div className={`rounded-lg border p-4 ${balance >= 0 ? "bg-[#F7F3E9] border-[#E9E2CC]" : "bg-red-50 border-red-100"}`}>
+                  <p className="text-xs text-gray-500">Net Balance</p>
+                  <p className={`text-2xl font-display ${balance >= 0 ? "text-[#4A0E52]" : "text-red-700"}`}>{fmt(balance)}</p>
+                </div>
+              </div>
+              <div className="flex gap-3 mb-6">
+                <div onClick={() => setShowAddTx("income")} className="flex-1 bg-green-600 text-white rounded-lg py-3 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
+                  <Plus className="w-4 h-4" /> Add Income
+                </div>
+                <div onClick={() => setShowAddTx("expense")} className="flex-1 bg-red-600 text-white rounded-lg py-3 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
+                  <Plus className="w-4 h-4" /> Add Expense
+                </div>
+              </div>
+              <h3 className="font-display text-base mb-3">Recent Transactions</h3>
+              <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
+                {filteredTx.slice(0, 8).map(t => (
+                  <div key={t.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="text-sm">{t.finance_categories?.name || "Uncategorized"}</p>
+                      <p className="text-xs text-gray-400">{t.description || t.transaction_date}</p>
+                    </div>
+                    <span className={`text-sm font-medium ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                      {t.type === "income" ? "+" : "-"}{fmt(t.amount)}
+                    </span>
+                  </div>
+                ))}
+                {filteredTx.length === 0 && <p className="p-4 text-sm text-gray-400">No transactions in this period.</p>}
+              </div>
+            </div>
+          )}
+
+          {tab === "transactions" && (
+            <div>
+              <div className="flex gap-3 mb-4">
+                <div onClick={() => setShowAddTx("income")} className="flex items-center gap-1 bg-green-600 text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Income</div>
+                <div onClick={() => setShowAddTx("expense")} className="flex items-center gap-1 bg-red-600 text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Expense</div>
+              </div>
+              <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
+                {filteredTx.map(t => (
+                  <div key={t.id} className="flex items-center justify-between px-4 py-3">
+                    <div>
+                      <p className="text-sm">{t.finance_categories?.name || "Uncategorized"} <span className="text-xs text-gray-400">· {t.transaction_date}</span></p>
+                      {t.description && <p className="text-xs text-gray-400">{t.description}</p>}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className={`text-sm font-medium ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>{t.type === "income" ? "+" : "-"}{fmt(t.amount)}</span>
+                      <div onClick={() => setConfirmDeleteTx(t)} className="p-1 cursor-pointer text-red-400"><Trash2 className="w-4 h-4" /></div>
+                    </div>
+                  </div>
+                ))}
+                {filteredTx.length === 0 && <p className="p-4 text-sm text-gray-400">No transactions found.</p>}
+              </div>
+            </div>
+          )}
+
+          {tab === "categories" && (
+            <div className="grid md:grid-cols-2 gap-4">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display text-base text-green-700">Income Categories</h3>
+                  <div onClick={() => setShowAddCat("income")} className="text-xs text-[#4A0E52] cursor-pointer flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</div>
+                </div>
+                <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
+                  {incomeCategories.map(c => (
+                    <div key={c.id} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-sm">{c.name}</span>
+                      <div onClick={() => setConfirmDeleteCat(c)} className="p-1 cursor-pointer text-red-400"><Trash2 className="w-3.5 h-3.5" /></div>
+                    </div>
+                  ))}
+                  {incomeCategories.length === 0 && <p className="p-3 text-sm text-gray-400">No categories yet.</p>}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-display text-base text-red-700">Expense Categories</h3>
+                  <div onClick={() => setShowAddCat("expense")} className="text-xs text-[#4A0E52] cursor-pointer flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add</div>
+                </div>
+                <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
+                  {expenseCategories.map(c => (
+                    <div key={c.id} className="flex items-center justify-between px-4 py-2.5">
+                      <span className="text-sm">{c.name}</span>
+                      <div onClick={() => setConfirmDeleteCat(c)} className="p-1 cursor-pointer text-red-400"><Trash2 className="w-3.5 h-3.5" /></div>
+                    </div>
+                  ))}
+                  {expenseCategories.length === 0 && <p className="p-3 text-sm text-gray-400">No categories yet.</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "reports" && (
+            <div>
+              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 mb-6">
+                <h3 className="font-display text-base mb-3 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-[#4A0E52]" /> Expense Breakdown</h3>
+                {expenseByCategory.length === 0 ? <p className="text-sm text-gray-400">No expense data for this period.</p> : (
+                  <ResponsiveContainer width="100%" height={280}>
+                    <PieChart>
+                      <Pie data={expenseByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label={(entry) => entry.name}>
+                        {expenseByCategory.map((entry, i) => <Cell key={i} fill={FINANCE_COLORS[i % FINANCE_COLORS.length]} />)}
+                      </Pie>
+                      <Tooltip formatter={(v) => fmt(v)} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
+                <h3 className="font-display text-base mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#4A0E52]" /> Income vs Expense Trend</h3>
+                {monthlyTrend.length === 0 ? <p className="text-sm text-gray-400">No data yet.</p> : (
+                  <ResponsiveContainer width="100%" height={260}>
+                    <BarChart data={monthlyTrend}>
+                      <CartesianGrid stroke="#F1ECDE" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v) => fmt(v)} />
+                      <Legend />
+                      <Bar dataKey="income" fill="#10B981" radius={[4,4,0,0]} />
+                      <Bar dataKey="expense" fill="#A6423A" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Add Transaction Modal */}
+      {showAddTx && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-display text-lg text-[#4A0E52] capitalize">Add {showAddTx}</h2>
+              <div onClick={() => setShowAddTx(null)} className="cursor-pointer"><X className="w-5 h-5" /></div>
+            </div>
+            <label className="block text-xs text-gray-500 mb-3">Category
+              <select value={txForm.category_id} onChange={(e) => setTxForm({ ...txForm, category_id: e.target.value })} className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
+                <option value="">Select category</option>
+                {(showAddTx === "income" ? incomeCategories : expenseCategories).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </label>
+            <Field label="Amount (₦)" type="number" value={txForm.amount} onChange={(v) => setTxForm({ ...txForm, amount: v })} />
+            <Field label="Date" type="date" value={txForm.transaction_date} onChange={(v) => setTxForm({ ...txForm, transaction_date: v })} />
+            <Field label="Description (optional)" value={txForm.description} onChange={(v) => setTxForm({ ...txForm, description: v })} />
+            <div onClick={addTransaction} className="mt-2 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Save</div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Category Modal */}
+      {showAddCat && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
+          <div className="bg-white rounded-lg p-6 w-full max-w-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-display text-lg text-[#4A0E52] capitalize">New {showAddCat} Category</h2>
+              <div onClick={() => setShowAddCat(null)} className="cursor-pointer"><X className="w-5 h-5" /></div>
+            </div>
+            <input value={newCatName} onChange={(e) => setNewCatName(e.target.value)} placeholder="Category name"
+              onKeyDown={(e) => e.key === "Enter" && addCategory()}
+              className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3" />
+            <div onClick={addCategory} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Add Category</div>
+          </div>
+        </div>
+      )}
+
+      {confirmDeleteTx && <ConfirmDialog name={confirmDeleteTx.description || confirmDeleteTx.finance_categories?.name || "this transaction"} type="transaction" onConfirm={deleteTransaction} onCancel={() => setConfirmDeleteTx(null)} />}
+      {confirmDeleteCat && <ConfirmDialog name={confirmDeleteCat.name} type="category" onConfirm={deleteCategory} onCancel={() => setConfirmDeleteCat(null)} />}
+    </div>
+  );
+}
+
+/* ---- Owner Password Settings — set/change per-feature passwords ---- */
+function OwnerPasswordSettings() {
+  const [open, setOpen] = useState(false);
+  const [locks, setLocks] = useState({ finance: false, download: false });
+  const [editing, setEditing] = useState(null); // "finance" | "download" | null
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  const loadLocks = async () => {
+    const [{ data: fin }, { data: dl }] = await Promise.all([
+      supabase.rpc("is_feature_locked", { key: "finance" }),
+      supabase.rpc("is_feature_locked", { key: "download" })
+    ]);
+    setLocks({ finance: fin === true, download: dl === true });
+  };
+  useEffect(() => { loadLocks(); }, []);
+
+  const savePassword = async () => {
+    if (!password || password.length < 4) { setError("Password must be at least 4 characters."); return; }
+    if (password !== confirm) { setError("Passwords do not match."); return; }
+    setSaving(true); setError("");
+    const { error: err } = await supabase.rpc("set_feature_password", { key: editing, new_password: password });
+    setSaving(false);
+    if (err) { setError(err.message); return; }
+    setPassword(""); setConfirm(""); setEditing(null); setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+    loadLocks();
+  };
+
+  const removePassword = async (key) => {
+    await supabase.rpc("remove_feature_password", { key });
+    loadLocks();
+  };
+
+  const features = [
+    { key: "finance", label: "Finance Page", desc: "Protects access to the Finance section" },
+    { key: "download", label: "Downloads & Print", desc: "Required before any export, download, or print" }
+  ];
+
+  return (
+    <div className="bg-white rounded-lg border border-[#E9E2CC] mt-6">
+      <div className="px-4 py-3 border-b border-[#F1ECDE] flex items-center justify-between cursor-pointer" onClick={() => setOpen(!open)}>
+        <p className="text-sm font-medium text-[#4A0E52] flex items-center gap-2"><Settings className="w-4 h-4" /> Owner: Manage Passwords</p>
+        <ChevronDown className={`w-4 h-4 text-[#4A0E52] transition-transform ${open ? "rotate-180" : ""}`} />
+      </div>
+      {open && (
+        <div className="p-4 space-y-3">
+          {features.map(f => (
+            <div key={f.key} className="flex items-center justify-between border border-[#E9E2CC] rounded-lg px-4 py-3">
+              <div>
+                <p className="text-sm font-medium">{f.label}</p>
+                <p className="text-xs text-gray-400">{f.desc}</p>
+                <p className="text-xs mt-1">
+                  {locks[f.key] ? <span className="text-green-600">🔒 Password set</span> : <span className="text-gray-400">🔓 No password set</span>}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <div onClick={() => { setEditing(f.key); setPassword(""); setConfirm(""); setError(""); }}
+                  className="text-xs border border-[#4A0E52] text-[#4A0E52] rounded-md px-2.5 py-1.5 cursor-pointer">
+                  {locks[f.key] ? "Change" : "Set"}
+                </div>
+                {locks[f.key] && (
+                  <div onClick={() => removePassword(f.key)} className="text-xs border border-red-300 text-red-500 rounded-md px-2.5 py-1.5 cursor-pointer">
+                    Remove
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+          {saved && <p className="text-xs text-green-600">✓ Password saved successfully.</p>}
+        </div>
+      )}
+
+      {editing && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40">
+          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="font-display text-lg text-[#4A0E52] capitalize">Set {editing} Password</h2>
+              <div onClick={() => setEditing(null)} className="cursor-pointer"><X className="w-5 h-5" /></div>
+            </div>
+            <input type="password" placeholder="New password" value={password} onChange={(e) => setPassword(e.target.value)}
+              className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3" />
+            <input type="password" placeholder="Confirm password" value={confirm} onChange={(e) => setConfirm(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && savePassword()}
+              className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3" />
+            {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
+            <div onClick={savePassword} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Save Password
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StaffView({ isOwner }) {
   const [staff, setStaff] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
@@ -1386,7 +1895,7 @@ function StaffView() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-        <h1 className="font-display text-2xl text-[#4A0E52]">Staff</h1>
+        <h1 className="font-display text-2xl text-[#4A0E52]">SCC Secretariat</h1>
         <div onClick={() => setShowAdd(true)} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Add Staff</div>
       </div>
       {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /> : (
@@ -1396,7 +1905,7 @@ function StaffView() {
               <div><p className="text-sm font-medium">{s.full_name}</p><p className="text-xs text-gray-400">{s.email}</p></div>
               <div className="flex items-center gap-3">
                 <span onClick={() => s.id !== currentUserId && toggleRole(s)} className={`text-xs px-2.5 py-1 rounded-full cursor-pointer ${s.role === "admin" ? "bg-[#4A0E52] text-white" : "bg-[#F1ECDE] text-[#4A0E52]"}`}>
-                  {s.role === "admin" ? "Admin" : "Staff"}
+                  {s.role === "admin" ? "Admin" : "Secretariat"}
                 </span>
                 {s.id === currentUserId ? <span className="text-xs text-gray-400">You</span> :
                   <div onClick={() => requestDeleteStaff(s)} className="p-1 cursor-pointer text-red-500"><Trash2 className="w-4 h-4" /></div>}
@@ -1418,7 +1927,7 @@ function StaffView() {
             <Field label="Password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
             <label className="block text-xs text-gray-500 mb-3">Role
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
-                <option value="usher">Staff</option><option value="admin">Admin</option>
+                <option value="usher">Secretariat</option><option value="admin">Admin</option>
               </select>
             </label>
             {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
@@ -1430,6 +1939,7 @@ function StaffView() {
       )}
       {confirmStaff && <ConfirmDialog name={confirmStaff.full_name} type="staff" onConfirm={removeStaff} onCancel={() => setConfirmStaff(null)} />}
       {undoStaff && <UndoToast message={`"${undoStaff.full_name}" removed.`} onUndo={handleUndoStaff} onDismiss={() => setUndoStaff(null)} />}
+      {isOwner && <OwnerPasswordSettings />}
     </div>
   );
 }
@@ -1438,7 +1948,7 @@ function StaffView() {
    APP ROOT
    ============================================================ */
 export default function App() {
-  const { session, loading, signOut, isAdmin } = useAuth();
+  const { session, profile, loading, signOut, isAdmin, isOwner } = useAuth();
   const [view, setView] = useState("dashboard");
   const [members, setMembers] = useState([]);
 
@@ -1454,12 +1964,13 @@ export default function App() {
 
   return (
     <Shell view={view} setView={setView} isAdmin={isAdmin} signOut={signOut}>
-      {view === "dashboard" && <DashboardView members={members} setView={setView} isAdmin={isAdmin} />}
+      {view === "dashboard" && <DashboardView members={members} setView={setView} isAdmin={isAdmin} profile={profile} />}
       {view === "attendance" && <AttendanceView members={members} />}
       {view === "members" && <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
       {view === "reports" && <ReportsView members={members} />}
       {view === "departments" && <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
-      {view === "staff" && isAdmin && <StaffView />}
+      {view === "finance" && <FinanceView isOwner={isOwner} />}
+      {view === "staff" && isAdmin && <StaffView isOwner={isOwner} />}
     </Shell>
   );
 }

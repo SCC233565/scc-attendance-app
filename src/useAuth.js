@@ -38,6 +38,7 @@ export function useAuth() {
   };
 
   const isAdmin = profile?.role === "admin";
+  const isOwner = profile?.is_owner === true;
 
-  return { session, profile, loading, signIn, signOut, isAdmin };
+  return { session, profile, loading, signIn, signOut, isAdmin, isOwner };
 }
