@@ -1896,7 +1896,7 @@ function StaffView({ isOwner }) {
     <div>
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <h1 className="font-display text-2xl text-[#4A0E52]">SCC Secretariat</h1>
-        <div onClick={() => setShowAdd(true)} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Add Staff</div>
+        <div onClick={() => setShowAdd(true)} className="flex items-center gap-1 bg-[#4A0E52] text-white rounded-md px-3 py-2 text-sm cursor-pointer"><Plus className="w-4 h-4" /> Add Admin</div>
       </div>
       {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /> : (
         <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
@@ -1919,7 +1919,7 @@ function StaffView({ isOwner }) {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-lg text-[#4A0E52]">Add Staff</h2>
+              <h2 className="font-display text-lg text-[#4A0E52]">Add Admin</h2>
               <div onClick={() => setShowAdd(false)} className="cursor-pointer"><X className="w-5 h-5" /></div>
             </div>
             <Field label="Full name" value={form.full_name} onChange={(v) => setForm({ ...form, full_name: v })} />
@@ -1932,7 +1932,7 @@ function StaffView({ isOwner }) {
             </label>
             {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
             <div onClick={addStaff} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Add Staff
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Add Admin
             </div>
           </div>
         </div>
