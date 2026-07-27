@@ -297,7 +297,7 @@ function Shell({ view, setView, isAdmin, isOwner, signOut, children }) {
           ); })}
         </nav>
         <div className="px-6 py-4 border-t border-white/10 text-xs">
-          <p className="mb-2 text-[#C9A5D6]">{isAdmin ? "Admin" : "Secretariat"}</p>
+          <p className="mb-2 text-[#C9A5D6]">{isAdmin ? "Secretariat" : "Admin"}</p>
           <div onClick={signOut} className="flex items-center gap-2 cursor-pointer hover:text-[#F3D98B]"><LogOut className="w-3.5 h-3.5" /> Sign out</div>
         </div>
       </aside>
@@ -1772,14 +1772,15 @@ function OwnerPasswordSettings() {
   };
 
   // Step 2: owner confirms with their actual login password before the removal proceeds
+  const OWNER_EMAIL = "supernaturalcitychurch@gmail.com";
+
   const confirmRemoveWithReAuth = async () => {
-    if (!loginPassword) { setReAuthError("Enter your login password to confirm."); return; }
+    if (!loginPassword) { setReAuthError("Enter the app owner's password to confirm."); return; }
     setReAuthChecking(true); setReAuthError("");
-    const { data: userData } = await supabase.auth.getUser();
-    const email = userData?.user?.email;
-    const { error: authErr } = await supabase.auth.signInWithPassword({ email, password: loginPassword });
+    // Always verify against the app owner's fixed account — never the current session's email
+    const { error: authErr } = await supabase.auth.signInWithPassword({ email: OWNER_EMAIL, password: loginPassword });
     setReAuthChecking(false);
-    if (authErr) { setReAuthError("Incorrect login password."); return; }
+    if (authErr) { setReAuthError("Incorrect owner password."); return; }
     await supabase.rpc("remove_feature_password", { key: removingKey });
     setRemovingKey(null); setLoginPassword("");
     loadLocks();
@@ -1852,9 +1853,9 @@ function OwnerPasswordSettings() {
               <div onClick={() => setRemovingKey(null)} className="cursor-pointer"><X className="w-5 h-5" /></div>
             </div>
             <p className="text-sm text-gray-500 mb-4">
-              For security, removing the <span className="font-medium capitalize">{removingKey}</span> password requires your own login password.
+              For security, removing the <span className="font-medium capitalize">{removingKey}</span> password requires the <strong>app owner's</strong> login password (supernaturalcitychurch@gmail.com) — not any other account's password.
             </p>
-            <input type="password" placeholder="Your login password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
+            <input type="password" placeholder="App owner's password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && confirmRemoveWithReAuth()}
               autoFocus
               className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3" />
@@ -1935,7 +1936,7 @@ function StaffView({ isOwner }) {
               <div><p className="text-sm font-medium">{s.full_name}</p><p className="text-xs text-gray-400">{s.email}</p></div>
               <div className="flex items-center gap-3">
                 <span onClick={() => s.id !== currentUserId && toggleRole(s)} className={`text-xs px-2.5 py-1 rounded-full cursor-pointer ${s.role === "admin" ? "bg-[#4A0E52] text-white" : "bg-[#F1ECDE] text-[#4A0E52]"}`}>
-                  {s.role === "admin" ? "Admin" : "Secretariat"}
+                  {s.role === "admin" ? "Secretariat" : "Admin"}
                 </span>
                 {s.id === currentUserId ? <span className="text-xs text-gray-400">You</span> :
                   <div onClick={() => requestDeleteStaff(s)} className="p-1 cursor-pointer text-red-500"><Trash2 className="w-4 h-4" /></div>}
@@ -1957,7 +1958,7 @@ function StaffView({ isOwner }) {
             <Field label="Password" value={form.password} onChange={(v) => setForm({ ...form, password: v })} />
             <label className="block text-xs text-gray-500 mb-3">Role
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
-                <option value="usher">Secretariat</option><option value="admin">Admin</option>
+                <option value="usher">Admin</option><option value="admin">Secretariat</option>
               </select>
             </label>
             {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
@@ -1967,7 +1968,7 @@ function StaffView({ isOwner }) {
           </div>
         </div>
       )}
-      {confirmStaff && <ConfirmDialog name={confirmStaff.full_name} type="staff" onConfirm={removeStaff} onCancel={() => setConfirmStaff(null)} />}
+      {confirmStaff && <ConfirmDialog name={confirmStaff.full_name} type="account" onConfirm={removeStaff} onCancel={() => setConfirmStaff(null)} />}
       {undoStaff && <UndoToast message={`"${undoStaff.full_name}" removed.`} onUndo={handleUndoStaff} onDismiss={() => setUndoStaff(null)} />}
       {isOwner && <OwnerPasswordSettings />}
     </div>
