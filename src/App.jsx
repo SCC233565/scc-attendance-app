@@ -4,7 +4,7 @@ import {
   Save, Loader2, TrendingDown, LogOut, Upload, Download, UserCog,
   Home, BookOpen, Archive, Phone, Mail, MapPin, Briefcase,
   Heart, Star, AlertTriangle, CheckCheck, ChevronDown, Printer, RefreshCw,
-  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon
+  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -26,6 +26,89 @@ const SERVICES = [
 
 const STATUS_OPTIONS = ["Active", "New Convert", "Visitor", "Inactive"];
 const PRESETS = ["Today","Yesterday","This week","Last week","This month","Last month","Last 7 days","Last 30 days","Last 1 year","Last 2 years","Last 3 years"];
+
+/* ---- Offline attendance queue — stores unsent records locally, syncs when back online ---- */
+const OFFLINE_QUEUE_KEY = "scc_offline_attendance_queue";
+
+function getOfflineQueue() {
+  try { return JSON.parse(localStorage.getItem(OFFLINE_QUEUE_KEY) || "[]"); } catch { return []; }
+}
+function setOfflineQueue(queue) {
+  try { localStorage.setItem(OFFLINE_QUEUE_KEY, JSON.stringify(queue)); } catch {}
+}
+function addToOfflineQueue(rows) {
+  const queue = getOfflineQueue();
+  queue.push({ id: Date.now() + Math.random(), rows, queuedAt: new Date().toISOString() });
+  setOfflineQueue(queue);
+}
+
+function useOnlineStatus() {
+  const [online, setOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true);
+  useEffect(() => {
+    const goOnline = () => setOnline(true);
+    const goOffline = () => setOnline(false);
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, []);
+  return online;
+}
+
+/* ---- Offline Sync Banner — shows status, auto-syncs queued attendance when back online ---- */
+function OfflineSyncBanner() {
+  const online = useOnlineStatus();
+  const [queueLen, setQueueLen] = useState(getOfflineQueue().length);
+  const [syncing, setSyncing] = useState(false);
+  const [justSynced, setJustSynced] = useState(false);
+
+  useEffect(() => {
+    const interval = setInterval(() => setQueueLen(getOfflineQueue().length), 2000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const syncQueue = async () => {
+    const queue = getOfflineQueue();
+    if (queue.length === 0) return;
+    setSyncing(true);
+    const remaining = [];
+    for (const batch of queue) {
+      try {
+        const { error } = await supabase.from("attendance_records").upsert(batch.rows, { onConflict: "member_id,service_type,service_date" });
+        if (error) remaining.push(batch);
+      } catch { remaining.push(batch); }
+    }
+    setOfflineQueue(remaining);
+    setQueueLen(remaining.length);
+    setSyncing(false);
+    if (remaining.length === 0) { setJustSynced(true); setTimeout(() => setJustSynced(false), 4000); }
+  };
+
+  useEffect(() => { if (online) syncQueue(); }, [online]); // eslint-disable-line
+
+  if (!online) {
+    return (
+      <div className="bg-yellow-50 border-b border-yellow-200 px-4 py-2 text-xs text-yellow-800 flex items-center gap-2">
+        <WifiOff className="w-3.5 h-3.5 shrink-0" /> You're offline — attendance will save on this device and sync automatically once you're back online.
+        {queueLen > 0 && <span className="ml-auto font-medium whitespace-nowrap">{queueLen} pending</span>}
+      </div>
+    );
+  }
+  if (syncing) {
+    return (
+      <div className="bg-blue-50 border-b border-blue-200 px-4 py-2 text-xs text-blue-800 flex items-center gap-2">
+        <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> Syncing {queueLen} offline record(s)...
+      </div>
+    );
+  }
+  if (justSynced) {
+    return (
+      <div className="bg-green-50 border-b border-green-200 px-4 py-2 text-xs text-green-800 flex items-center gap-2">
+        <CheckCheck className="w-3.5 h-3.5 shrink-0" /> All offline attendance synced successfully!
+      </div>
+    );
+  }
+  return null;
+}
 
 function presetToRange(preset) {
   const today = new Date();
@@ -306,7 +389,10 @@ function Shell({ view, setView, isAdmin, isOwner, signOut, children }) {
           <Logo className="h-7" />
           <div onClick={signOut} className="text-xs flex items-center gap-1"><LogOut className="w-3.5 h-3.5" /> Sign out</div>
         </div>
-        <main className="p-4 md:p-8 max-w-5xl mx-auto">{children}</main>
+        <main className="p-4 md:p-8 max-w-5xl mx-auto">
+          <OfflineSyncBanner />
+          {children}
+        </main>
       </div>
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-[#4A0E52] flex z-10">
         {items.map((it) => { const Icon = it.icon; const active = view === it.id; return (
@@ -806,10 +892,28 @@ function AttendanceView({ members }) {
   const selectAll = () => { const map = {}; filtered.forEach(m => map[m.id] = true); setPresent(p => ({ ...p, ...map })); };
   const clearAll = () => { const map = {}; filtered.forEach(m => map[m.id] = false); setPresent(p => ({ ...p, ...map })); };
 
+  const [savedOffline, setSavedOffline] = useState(false);
+
   const save = async () => {
     setSaving(true);
     const rows = Object.entries(present).filter(([, v]) => v).map(([member_id]) => ({ member_id, service_type: service, service_date: date, present: true }));
-    if (rows.length) await supabase.from("attendance_records").upsert(rows, { onConflict: "member_id,service_type,service_date" });
+    if (rows.length) {
+      if (!navigator.onLine) {
+        addToOfflineQueue(rows);
+        setSaving(false); setSavedOffline(true);
+        setTimeout(() => setSavedOffline(false), 4000);
+        return;
+      }
+      try {
+        const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "member_id,service_type,service_date" });
+        if (error) throw error;
+      } catch (e) {
+        addToOfflineQueue(rows);
+        setSaving(false); setSavedOffline(true);
+        setTimeout(() => setSavedOffline(false), 4000);
+        return;
+      }
+    }
     setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 3000);
   };
@@ -872,8 +976,8 @@ function AttendanceView({ members }) {
 
       <div className="mt-4 flex gap-3 flex-wrap">
         <div onClick={save} className="inline-flex items-center gap-2 bg-[#4A0E52] hover:bg-[#63177A] text-white rounded-md px-5 py-2.5 text-sm cursor-pointer">
-          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCheck className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-          {saved ? "Saved!" : "Save Attendance"}
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCheck className="w-4 h-4" /> : savedOffline ? <WifiOff className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+          {saved ? "Saved!" : savedOffline ? "Saved offline — will sync" : "Save Attendance"}
         </div>
         <div onClick={() => setShowDownloadAuth(true)} className="inline-flex items-center gap-2 border border-[#4A0E52] text-[#4A0E52] rounded-md px-5 py-2.5 text-sm cursor-pointer">
           <Printer className="w-4 h-4" /> Print Register
@@ -1731,6 +1835,58 @@ function FinanceDashboard({ isOwner, onLock }) {
 }
 
 /* ---- Owner Password Settings — set/change per-feature passwords ---- */
+/* ---- Backup & Export — full data download, password protected ---- */
+function BackupExport() {
+  const [showAuth, setShowAuth] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const doBackup = async () => {
+    setExporting(true);
+    const [{ data: members }, { data: attendance }, { data: departments }] = await Promise.all([
+      supabase.from("members").select("*"),
+      supabase.from("attendance_records").select("*"),
+      supabase.from("departments").select("*")
+    ]);
+    const backup = {
+      church: "Supernatural City Church",
+      exported_at: new Date().toISOString(),
+      counts: { members: (members || []).length, attendance_records: (attendance || []).length, departments: (departments || []).length },
+      members: members || [],
+      attendance_records: attendance || [],
+      departments: departments || []
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `scc-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    setExporting(false);
+    setDone(true);
+    setTimeout(() => setDone(false), 3000);
+  };
+
+  return (
+    <div className="bg-white rounded-lg border border-[#E9E2CC] mt-6 p-4">
+      <p className="text-sm font-medium text-[#4A0E52] flex items-center gap-2 mb-1"><Download className="w-4 h-4" /> Backup & Export</p>
+      <p className="text-xs text-gray-400 mb-3">Download a complete backup of all members, attendance records, and departments — useful to keep a safe copy on your computer.</p>
+      <div onClick={() => setShowAuth(true)} className="inline-flex items-center gap-2 border border-[#4A0E52] text-[#4A0E52] rounded-md px-3 py-2 text-sm cursor-pointer">
+        {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : done ? <CheckCheck className="w-4 h-4" /> : <Download className="w-4 h-4" />}
+        {done ? "Downloaded!" : "Download Full Backup"}
+      </div>
+      {showAuth && (
+        <PasswordPromptModal
+          featureKey="download"
+          title="Confirm Backup Download"
+          onSuccess={() => { setShowAuth(false); doBackup(); }}
+          onClose={() => setShowAuth(false)}
+        />
+      )}
+    </div>
+  );
+}
+
 function OwnerPasswordSettings() {
   const [open, setOpen] = useState(false);
   const [locks, setLocks] = useState({ finance: false, download: false });
@@ -1970,6 +2126,7 @@ function StaffView({ isOwner }) {
       )}
       {confirmStaff && <ConfirmDialog name={confirmStaff.full_name} type="account" onConfirm={removeStaff} onCancel={() => setConfirmStaff(null)} />}
       {undoStaff && <UndoToast message={`"${undoStaff.full_name}" removed.`} onUndo={handleUndoStaff} onDismiss={() => setUndoStaff(null)} />}
+      <BackupExport />
       {isOwner && <OwnerPasswordSettings />}
     </div>
   );
