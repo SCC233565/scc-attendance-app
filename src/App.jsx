@@ -272,14 +272,14 @@ function LoginScreen() {
 }
 
 /* ---- Shell ---- */
-function Shell({ view, setView, isAdmin, signOut, children }) {
+function Shell({ view, setView, isAdmin, isOwner, signOut, children }) {
   const items = [
     { id: "dashboard", label: "Dashboard", icon: Home },
     { id: "attendance", label: "Attendance", icon: CalendarCheck },
     { id: "members", label: "Members", icon: Users },
     { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "departments", label: "Depts", icon: BookOpen },
-    ...(!isAdmin ? [{ id: "finance", label: "Finance", icon: DollarSign }] : []),
+    ...(!isAdmin || isOwner ? [{ id: "finance", label: "Finance", icon: DollarSign }] : []),
     ...(isAdmin ? [{ id: "staff", label: "Secretariat", icon: UserCog }] : [])
   ];
   return (
@@ -1993,13 +1993,13 @@ export default function App() {
   if (!session) return <LoginScreen />;
 
   return (
-    <Shell view={view} setView={setView} isAdmin={isAdmin} signOut={signOut}>
+    <Shell view={view} setView={setView} isAdmin={isAdmin} isOwner={isOwner} signOut={signOut}>
       {view === "dashboard" && <DashboardView members={members} setView={setView} isAdmin={isAdmin} profile={profile} />}
       {view === "attendance" && <AttendanceView members={members} />}
       {view === "members" && <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
       {view === "reports" && <ReportsView members={members} />}
       {view === "departments" && <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
-      {view === "finance" && !isAdmin && <FinanceView isOwner={isOwner} />}
+      {view === "finance" && (!isAdmin || isOwner) && <FinanceView isOwner={isOwner} />}
       {view === "staff" && isAdmin && <StaffView isOwner={isOwner} />}
     </Shell>
   );
