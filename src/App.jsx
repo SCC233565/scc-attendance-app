@@ -997,6 +997,27 @@ function AttendanceView({ members }) {
   const selectAll = () => { const map = {}; filtered.forEach(m => map[m.id] = true); setPresent(p => ({ ...p, ...map })); };
   const clearAll = () => { const map = {}; filtered.forEach(m => map[m.id] = false); setPresent(p => ({ ...p, ...map })); };
 
+  // Auto-detect which service a picked date belongs to:
+  // Sunday -> Sunday Service, Wednesday -> Wednesday Service, first Saturday of the month -> 7HWG
+  const serviceForDate = (dateStr) => {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const picked = new Date(y, m - 1, d);
+    const dayOfWeek = picked.getDay(); // 0=Sun, 3=Wed, 6=Sat
+    if (dayOfWeek === 0) return "Sunday Service";
+    if (dayOfWeek === 3) return "Wednesday Service";
+    if (dayOfWeek === 6) {
+      const isFirstSaturday = d <= 7;
+      if (isFirstSaturday) return "7HWG";
+    }
+    return null; // no automatic match — leave service as-is
+  };
+
+  const handleDateChange = (newDate) => {
+    setDate(newDate);
+    const matched = serviceForDate(newDate);
+    if (matched) setService(matched);
+  };
+
   const [savedOffline, setSavedOffline] = useState(false);
 
   const save = async () => {
@@ -1042,16 +1063,17 @@ function AttendanceView({ members }) {
   return (
     <div>
       <h1 className="font-display text-2xl text-[#4A0E52] mb-4">SCC Attendance</h1>
-      <div className="flex flex-wrap gap-3 mb-4">
+      <div className="flex flex-wrap gap-3 mb-2">
         <select value={service} onChange={(e) => setService(e.target.value)} className="border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
           {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white" />
+        <input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} className="border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white" />
         <div className="relative flex-1 min-w-[180px]">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
           <input placeholder="Search members..." value={search} onChange={(e) => setSearch(e.target.value)} className="w-full pl-9 border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white" />
         </div>
       </div>
+      <p className="text-xs text-gray-400 mb-4">Pick a date and the service auto-selects: Sundays → Sunday Service, Wednesdays → Wednesday Service, first Saturday of the month → 7HWG.</p>
 
       {/* Action bar */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
