@@ -4,12 +4,8 @@ import {
   Save, Loader2, TrendingDown, LogOut, Upload, Download, UserCog,
   Home, BookOpen, Archive, Phone, Mail, MapPin, Briefcase,
   Heart, Star, AlertTriangle, CheckCheck, ChevronDown, Printer, RefreshCw,
-  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff, MessageCircle, StickyNote,
-  FileText, FileSpreadsheet, History, Wallet, Landmark
+  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff, MessageCircle
 } from "lucide-react";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, PieChart, Pie, Cell, Legend
@@ -265,84 +261,6 @@ function PasswordPromptModal({ featureKey, title, onSuccess, onClose }) {
           {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Confirm
         </div>
       </div>
-    </div>
-  );
-}
-
-// Re-auth against the app owner's actual login — used wherever an action must be
-// restricted to the owner specifically, not any admin who knows a shared feature password.
-const OWNER_EMAIL = "supernaturalcitychurch@gmail.com";
-
-function OwnerReAuthModal({ title, onSuccess, onClose }) {
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [checking, setChecking] = useState(false);
-
-  const submit = async () => {
-    if (!password) { setError("Enter the owner's login password to confirm."); return; }
-    setChecking(true); setError("");
-    const { error: authErr } = await supabase.auth.signInWithPassword({ email: OWNER_EMAIL, password });
-    setChecking(false);
-    if (authErr) { setError("Incorrect owner password."); return; }
-    onSuccess();
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40">
-      <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-2xl">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="font-display text-lg text-[#4A0E52] flex items-center gap-2"><Lock className="w-4 h-4" /> {title}</h2>
-          <div onClick={onClose} className="cursor-pointer"><X className="w-5 h-5" /></div>
-        </div>
-        <p className="text-xs text-gray-400 mb-3">Only the app owner's login can confirm this.</p>
-        <input
-          type="password"
-          placeholder="Owner login password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && submit()}
-          autoFocus
-          className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm mb-3"
-        />
-        {error && <p className="text-xs text-red-600 mb-3">{error}</p>}
-        <div onClick={submit} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
-          {checking ? <Loader2 className="w-4 h-4 animate-spin" /> : null} Confirm
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function MemberPicker({ members, value, onChange }) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const selected = members.find(m => m.id === value);
-  const filtered = query ? members.filter(m => m.full_name.toLowerCase().includes(query.toLowerCase())).slice(0, 8) : [];
-  return (
-    <div className="relative">
-      <input
-        value={selected ? selected.full_name : query}
-        readOnly={!!selected}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
-        onFocus={() => !selected && setOpen(true)}
-        placeholder="Search member name…"
-        className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white pr-8"
-      />
-      {selected && (
-        <div onClick={() => { onChange(""); setQuery(""); }} className="absolute right-2 top-2.5 text-gray-400 cursor-pointer">
-          <X className="w-4 h-4" />
-        </div>
-      )}
-      {open && !selected && query && (
-        <div className="absolute z-10 bg-white border border-[#E9E2CC] rounded-md mt-1 w-full max-h-48 overflow-y-auto shadow-lg">
-          {filtered.map(m => (
-            <div key={m.id} onClick={() => { onChange(m.id); setQuery(""); setOpen(false); }} className="px-3 py-2 text-sm cursor-pointer hover:bg-[#F7F3E9]">
-              {m.full_name}
-            </div>
-          ))}
-          {filtered.length === 0 && <div className="px-3 py-2 text-sm text-gray-400">No matches</div>}
-        </div>
-      )}
     </div>
   );
 }
@@ -635,7 +553,7 @@ function Shell({ view, setView, isAdmin, isOwner, signOut, members, onSelectMemb
 /* ============================================================
    MEMBER LIST OVERLAY — opens from dashboard card clicks
    ============================================================ */
-function MemberListOverlay({ title, subtitle, members, extra, onClose, onSelectMember, headerAction }) {
+function MemberListOverlay({ title, subtitle, members, extra, onClose, onSelectMember, actionLabel, onAction }) {
   const [search, setSearch] = useState("");
   const filtered = members.filter(m => m.full_name.toLowerCase().includes(search.toLowerCase()));
   return (
@@ -646,10 +564,14 @@ function MemberListOverlay({ title, subtitle, members, extra, onClose, onSelectM
           <div>
             <h2 className="font-display text-lg">{title}</h2>
             {subtitle && <p className="text-[#C9A5D6] text-sm">{subtitle}</p>}
-            {headerAction}
           </div>
           <div onClick={onClose} className="cursor-pointer mt-0.5"><X className="w-5 h-5" /></div>
         </div>
+        {actionLabel && onAction && (
+          <div onClick={onAction} className="px-5 py-2.5 bg-[#F7F3E9] border-b border-[#E9E2CC] text-sm text-[#4A0E52] font-medium cursor-pointer flex items-center gap-2 hover:bg-[#F1ECDE]">
+            <Pencil className="w-3.5 h-3.5" /> {actionLabel}
+          </div>
+        )}
         {/* Search */}
         <div className="px-4 py-3 border-b border-[#E9E2CC]">
           <div className="relative">
@@ -690,24 +612,90 @@ function MemberListOverlay({ title, subtitle, members, extra, onClose, onSelectM
 /* ============================================================
    DASHBOARD VIEW
    ============================================================ */
+/* ---- Follow-up Note Modal — log a follow-up with an optional note, view history ---- */
+function FollowUpNoteModal({ member, history, onSave, onClose }) {
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    setSaving(true);
+    await onSave(note);
+    setSaving(false);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-40">
+      <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[80vh] overflow-y-auto shadow-2xl">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="font-display text-lg text-[#4A0E52]">Follow-up: {member.full_name}</h2>
+          <div onClick={onClose} className="cursor-pointer"><X className="w-5 h-5" /></div>
+        </div>
+        <label className="block text-xs text-gray-500 mb-3">
+          Note (optional)
+          <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={3}
+            placeholder="e.g. Called, promised to attend next Sunday..."
+            className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm" />
+        </label>
+        <div onClick={submit} className="bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer flex items-center justify-center gap-2 mb-5">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCheck className="w-4 h-4" />} Mark Followed Up
+        </div>
+        <p className="text-xs text-gray-400 mb-2">Follow-up history</p>
+        {history.length === 0 ? <p className="text-sm text-gray-400">No follow-ups logged yet.</p> :
+          <div className="space-y-2">
+            {history.map(f => (
+              <div key={f.id} className="border-b border-[#F1ECDE] pb-2 last:border-0">
+                <p className="text-xs text-gray-500">{new Date(f.followed_up_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</p>
+                {f.note && <p className="text-sm mt-0.5">{f.note}</p>}
+              </div>
+            ))}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
 function DashboardView({ members: allMembers, setView, isAdmin, profile }) {
   const members = allMembers.filter(m => !m.archived); // Dashboard never counts archived members
   const [records, setRecords] = useState([]);
   const [loading, setLoading] = useState(true);
   const [overlay, setOverlay] = useState(null); // { title, subtitle, members, extra }
   const [selectedMember, setSelectedMember] = useState(null);
+  const [followUps, setFollowUps] = useState([]);
+  const [followUpNoteFor, setFollowUpNoteFor] = useState(null); // member being noted
 
   const openOverlay = (title, subtitle, list, extra) => setOverlay({ title, subtitle, members: list, extra: extra || {} });
   const closeOverlay = () => setOverlay(null);
 
+  const loadFollowUps = async () => {
+    const { data } = await supabase.from("follow_ups").select("*").order("followed_up_at", { ascending: false });
+    setFollowUps(data || []);
+  };
+
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data } = await supabase.from("attendance_records").select("*").order("service_date", { ascending: false });
+      const [{ data }, ] = await Promise.all([
+        supabase.from("attendance_records").select("*").order("service_date", { ascending: false }),
+        loadFollowUps()
+      ]);
       setRecords(data || []);
       setLoading(false);
     })();
   }, []);
+
+  // Most recent follow-up per member, so we always show the latest date/note
+  const lastFollowUpByMember = {};
+  followUps.forEach(f => {
+    if (!lastFollowUpByMember[f.member_id]) lastFollowUpByMember[f.member_id] = f; // already sorted newest-first
+  });
+
+  const markFollowedUp = async (memberId, note = "") => {
+    const { data: ud } = await supabase.auth.getUser();
+    await supabase.from("follow_ups").insert([{ member_id: memberId, note, followed_up_by: ud?.user?.id }]);
+    loadFollowUps();
+  };
 
   const today = new Date();
   const todayStr = today.toISOString().slice(0, 10);
@@ -792,15 +780,37 @@ function DashboardView({ members: allMembers, setView, isAdmin, profile }) {
           {loading ? <Loader2 className="w-4 h-4 animate-spin text-[#4A0E52]" /> :
             needsFollowUp.length === 0 ? <p className="text-sm text-gray-400">All active members attended recently.</p> :
             <>
-              <ul className="space-y-2 mb-3">
-                {needsFollowUp.map(m => (
-                  <li key={m.id} className="flex items-center justify-between text-sm cursor-pointer hover:text-[#4A0E52]" onClick={() => setSelectedMember(m)}>
-                    <span>{m.full_name}</span>
-                    <ContactButton phone={m.phone} size="w-3 h-3" className="text-green-600 text-xs cursor-pointer" />
-                  </li>
-                ))}
+              <ul className="space-y-3 mb-3">
+                {needsFollowUp.map(m => {
+                  const last = lastFollowUpByMember[m.id];
+                  return (
+                    <li key={m.id} className="text-sm border-b border-[#F1ECDE] last:border-0 pb-2">
+                      <div className="flex items-center justify-between">
+                        <span className="cursor-pointer hover:text-[#4A0E52]" onClick={() => setSelectedMember(m)}>{m.full_name}</span>
+                        <ContactButton phone={m.phone} size="w-3 h-3" className="text-green-600 text-xs cursor-pointer" />
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs text-gray-400">
+                          {last ? `Last followed up: ${new Date(last.followed_up_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}` : "Never followed up"}
+                        </span>
+                        <div className="flex items-center gap-3">
+                          <div onClick={() => setFollowUpNoteFor(m)} className="text-xs text-gray-400 cursor-pointer flex items-center gap-1" title="Add a note">
+                            <Pencil className="w-3 h-3" /> Note
+                          </div>
+                          <div onClick={() => markFollowedUp(m.id)} className="text-xs text-green-600 cursor-pointer flex items-center gap-1 font-medium">
+                            <CheckCheck className="w-3 h-3" /> Mark
+                          </div>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
-              <div onClick={() => openOverlay("Needs Follow-up", "Active members not seen in 30+ days", members.filter(m=>m.membership_status==="Active" && !recentAttendees.has(m.id)))}
+              <div onClick={() => {
+                const list = members.filter(m=>m.membership_status==="Active" && !recentAttendees.has(m.id));
+                const extraInfo = Object.fromEntries(list.map(m => [m.id, lastFollowUpByMember[m.id] ? `Followed up ${new Date(lastFollowUpByMember[m.id].followed_up_at).toLocaleDateString("en-US",{month:"short",day:"numeric"})}` : "Never followed up"]));
+                openOverlay("Needs Follow-up", "Active members not seen in 30+ days", list, extraInfo);
+              }}
                 className="text-xs text-[#4A0E52] cursor-pointer font-medium">View all {members.filter(m=>m.membership_status==="Active" && !recentAttendees.has(m.id)).length} →</div>
             </>
           }
@@ -891,6 +901,15 @@ function DashboardView({ members: allMembers, setView, isAdmin, profile }) {
           onClose={() => setSelectedMember(null)}
           isAdmin={isAdmin}
           onEdit={() => setSelectedMember(null)}
+        />
+      )}
+
+      {followUpNoteFor && (
+        <FollowUpNoteModal
+          member={followUpNoteFor}
+          history={followUps.filter(f => f.member_id === followUpNoteFor.id)}
+          onSave={(note) => markFollowedUp(followUpNoteFor.id, note)}
+          onClose={() => setFollowUpNoteFor(null)}
         />
       )}
     </div>
@@ -1117,48 +1136,15 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
 /* ============================================================
    ATTENDANCE VIEW — with Select All & Print
    ============================================================ */
-function AttendanceView({ members: allMembers, jump }) {
+function AttendanceView({ members: allMembers, prefill }) {
   const members = allMembers.filter(m => !m.archived); // never mark attendance for archived members
-  const [service, setService] = useState(jump ? jump.service : SERVICES[0].id);
-  const [date, setDate] = useState(jump ? jump.date : new Date().toISOString().slice(0, 10));
+  const [service, setService] = useState(prefill?.service || SERVICES[0].id);
+  const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [present, setPresent] = useState({});
-
-  // Jump here from Reports with a specific date/service (e.g. "View in Attendance →")
-  useEffect(() => {
-    if (jump) {
-      setDate(jump.date);
-      setService(jump.service);
-    }
-  }, [jump]);
   const [originalPresent, setOriginalPresent] = useState({}); // snapshot of what's actually saved in the DB
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [search, setSearch] = useState("");
-  const [note, setNote] = useState("");
-  const [originalNote, setOriginalNote] = useState("");
-  const [noteSaving, setNoteSaving] = useState(false);
-  const [noteSaved, setNoteSaved] = useState(false);
-
-  useEffect(() => {
-    (async () => {
-      const { data } = await supabase.from("service_notes").select("note").eq("service_type", service).eq("service_date", date).maybeSingle();
-      setNote(data?.note || "");
-      setOriginalNote(data?.note || "");
-    })();
-  }, [service, date]);
-
-  const saveNote = async () => {
-    if (note === originalNote) return;
-    setNoteSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from("service_notes")
-      .upsert({ service_type: service, service_date: date, note, updated_by: user?.id, updated_at: new Date().toISOString() }, { onConflict: "service_date,service_type" });
-    setNoteSaving(false);
-    if (error) { alert("Could not save note: " + error.message); return; }
-    setOriginalNote(note);
-    setNoteSaved(true);
-    setTimeout(() => setNoteSaved(false), 2500);
-  };
 
   useEffect(() => {
     (async () => {
@@ -1272,23 +1258,6 @@ function AttendanceView({ members: allMembers, jump }) {
         </div>
       </div>
       <p className="text-xs text-gray-400 mb-4">Pick a date and the service auto-selects: Sundays → Sunday Service, Wednesdays → Wednesday Service, first Saturday of the month → 7HWG.</p>
-
-      {/* Service note */}
-      <div className="bg-white rounded-lg border border-[#E9E2CC] p-3 mb-4">
-        <div className="flex items-center gap-2 mb-1.5 text-xs text-gray-400">
-          <StickyNote className="w-3.5 h-3.5" /> Note for this service
-          {noteSaving && <Loader2 className="w-3 h-3 animate-spin text-[#4A0E52]" />}
-          {noteSaved && <span className="text-[#4A0E52]">Saved</span>}
-        </div>
-        <textarea
-          value={note}
-          onChange={(e) => setNote(e.target.value)}
-          onBlur={saveNote}
-          placeholder="e.g. Guest preacher, communion service, rain affected turnout…"
-          rows={2}
-          className="w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white resize-none focus:outline-none focus:border-[#4A0E52]"
-        />
-      </div>
 
       {/* Action bar */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -1572,7 +1541,6 @@ function ServiceSessionsOverlay({ sessions, onClose, onSelectSession }) {
               <div>
                 <p className="text-sm font-medium">{new Date(s.service_date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" })}</p>
                 <p className="text-xs text-gray-400">{s.service_type}</p>
-                {s.note && <p className="text-xs text-[#4A0E52] mt-0.5 flex items-center gap-1"><StickyNote className="w-3 h-3" /> {s.note}</p>}
               </div>
               <span className="text-xs bg-[#F7F3E9] text-[#4A0E52] px-2.5 py-1 rounded-full font-medium">{s.memberIds.length} attended →</span>
             </div>
@@ -1583,21 +1551,16 @@ function ServiceSessionsOverlay({ sessions, onClose, onSelectSession }) {
   );
 }
 
-function ReportsView({ members, onGoToAttendance }) {
+function ReportsView({ members, onEditAttendance }) {
   const [records, setRecords] = useState([]);
-  const [serviceNotes, setServiceNotes] = useState([]);
   const [range, setRange] = useState(() => ({ ...presetToRange("This month"), label: "This month" }));
 
   useEffect(() => {
     (async () => {
       const { data } = await supabase.from("attendance_records").select("*").order("service_date", { ascending: true });
       setRecords(data || []);
-      const { data: notes } = await supabase.from("service_notes").select("service_date, service_type, note");
-      setServiceNotes(notes || []);
     })();
   }, []);
-
-  const noteFor = (date, type) => serviceNotes.find(n => n.service_date === date && n.service_type === type)?.note || "";
 
   const filteredRecords = useMemo(() => records.filter(r => r.service_date >= range.start && r.service_date <= range.end), [records, range]);
   const activeMembers = members.filter(m => !m.archived);
@@ -1632,8 +1595,8 @@ function ReportsView({ members, onGoToAttendance }) {
       if (!map[key]) map[key] = { service_date: r.service_date, service_type: r.service_type, memberIds: [] };
       map[key].memberIds.push(r.member_id);
     });
-    return Object.values(map).map(s => ({ ...s, note: noteFor(s.service_date, s.service_type) })).sort((a, b) => b.service_date.localeCompare(a.service_date));
-  }, [filteredRecords, serviceNotes]);
+    return Object.values(map).sort((a, b) => b.service_date.localeCompare(a.service_date));
+  }, [filteredRecords]);
 
   const [sessionsOpen, setSessionsOpen] = useState(false);
   const [sessionMemberOverlay, setSessionMemberOverlay] = useState(null);
@@ -1644,10 +1607,9 @@ function ReportsView({ members, onGoToAttendance }) {
     setSessionsOpen(false);
     setSessionMemberOverlay({
       title: `${session.service_type} — ${new Date(session.service_date).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}`,
-      subtitle: `${sessionMembers.length} member${sessionMembers.length !== 1 ? "s" : ""} attended${session.note ? ` · ${session.note}` : ""}`,
+      subtitle: `${sessionMembers.length} member${sessionMembers.length !== 1 ? "s" : ""} attended`,
       members: sessionMembers,
-      service_date: session.service_date,
-      service_type: session.service_type
+      session
     });
   };
 
@@ -1723,14 +1685,12 @@ function ReportsView({ members, onGoToAttendance }) {
           members={sessionMemberOverlay.members}
           onClose={() => setSessionMemberOverlay(null)}
           onSelectMember={(m) => { setSessionMemberOverlay(null); setSelectedMemberFromSession(m); }}
-          headerAction={onGoToAttendance && (
-            <div
-              onClick={() => { onGoToAttendance(sessionMemberOverlay.service_date, sessionMemberOverlay.service_type); setSessionMemberOverlay(null); }}
-              className="text-[#F3D98B] text-xs font-medium cursor-pointer mt-1 hover:underline"
-            >
-              View in Attendance →
-            </div>
-          )}
+          actionLabel="Edit This Service's Attendance"
+          onAction={() => {
+            const { service_type, service_date } = sessionMemberOverlay.session;
+            setSessionMemberOverlay(null);
+            if (onEditAttendance) onEditAttendance(service_type, service_date);
+          }}
         />
       )}
       {selectedMemberFromSession && (
@@ -1988,40 +1948,23 @@ function FinanceDashboard({ isOwner, onLock }) {
   const [tab, setTab] = useState("overview");
   const [categories, setCategories] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  const [budgets, setBudgets] = useState([]);
-  const [auditLog, setAuditLog] = useState([]);
-  const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddTx, setShowAddTx] = useState(null); // "income" | "expense" | null
   const [showAddCat, setShowAddCat] = useState(null);
   const [newCatName, setNewCatName] = useState("");
-  const [txForm, setTxForm] = useState({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10), payment_method: "Cash", member_id: "" });
+  const [txForm, setTxForm] = useState({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10) });
   const [confirmDeleteTx, setConfirmDeleteTx] = useState(null);
-  const [deleteAuthTx, setDeleteAuthTx] = useState(null); // transaction pending owner confirmation
   const [confirmDeleteCat, setConfirmDeleteCat] = useState(null);
-  const [editTx, setEditTx] = useState(null); // transaction currently open in the edit modal
-  const [editAuthTx, setEditAuthTx] = useState(null); // edited values pending owner confirmation
-  const [budgetInputs, setBudgetInputs] = useState({}); // category_id -> draft monthly amount string
-  const [editingBudget, setEditingBudget] = useState(null); // category_id currently open for edit, or null
-  const [showAddBudget, setShowAddBudget] = useState(false);
-  const [newBudgetForm, setNewBudgetForm] = useState({ category_id: "", amount: "" });
-  const [showExportAuth, setShowExportAuth] = useState(null); // "pdf" | "excel" | null — pending the download password
   const [range, setRange] = useState(() => ({ ...presetToRange("This month"), label: "This month" }));
 
   const load = async () => {
     setLoading(true);
-    const [{ data: cats }, { data: txs }, { data: buds }, { data: audit }, { data: mems }] = await Promise.all([
+    const [{ data: cats }, { data: txs }] = await Promise.all([
       supabase.from("finance_categories").select("*").order("name"),
-      supabase.from("finance_transactions").select("*, finance_categories(name), members(full_name)").order("transaction_date", { ascending: false }),
-      supabase.from("finance_budgets").select("*"),
-      supabase.from("finance_transaction_audit").select("*, profiles(full_name)").order("changed_at", { ascending: false }).limit(200),
-      supabase.from("members").select("id, full_name").order("full_name")
+      supabase.from("finance_transactions").select("*, finance_categories(name)").order("transaction_date", { ascending: false })
     ]);
     setCategories(cats || []);
     setTransactions(txs || []);
-    setBudgets(buds || []);
-    setAuditLog(audit || []);
-    setMembers(mems || []);
     setLoading(false);
   };
   useEffect(() => { load(); }, []);
@@ -2047,80 +1990,23 @@ function FinanceDashboard({ isOwner, onLock }) {
     setConfirmDeleteCat(null); load();
   };
 
-  const saveBudget = async (categoryId) => {
-    const raw = budgetInputs[categoryId];
-    if (raw === undefined) return;
-    const amount = Number(raw) || 0;
-    const { data: ud } = await supabase.auth.getUser();
-    await supabase.from("finance_budgets").upsert(
-      { category_id: categoryId, monthly_amount: amount, updated_by: ud?.user?.id, updated_at: new Date().toISOString() },
-      { onConflict: "category_id" }
-    );
-    load();
-  };
-
-  const addNewBudget = async () => {
-    if (!newBudgetForm.category_id || !newBudgetForm.amount) return;
-    const { data: ud } = await supabase.auth.getUser();
-    await supabase.from("finance_budgets").upsert(
-      { category_id: newBudgetForm.category_id, monthly_amount: Number(newBudgetForm.amount), updated_by: ud?.user?.id, updated_at: new Date().toISOString() },
-      { onConflict: "category_id" }
-    );
-    setNewBudgetForm({ category_id: "", amount: "" });
-    setShowAddBudget(false);
-    load();
-  };
-
   const addTransaction = async () => {
     if (!txForm.category_id || !txForm.amount) return;
     const { data: ud } = await supabase.auth.getUser();
-    const { data: inserted } = await supabase.from("finance_transactions").insert([{
+    await supabase.from("finance_transactions").insert([{
       type: showAddTx, category_id: txForm.category_id, amount: Number(txForm.amount),
-      description: txForm.description, transaction_date: txForm.transaction_date, payment_method: txForm.payment_method,
-      member_id: txForm.member_id || null, created_by: ud?.user?.id
-    }]).select().single();
-    if (inserted) {
-      await supabase.from("finance_transaction_audit").insert([{
-        transaction_id: inserted.id, action: "create", new_data: inserted, changed_by: ud?.user?.id
-      }]);
-    }
-    setTxForm({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10), payment_method: "Cash", member_id: "" });
+      description: txForm.description, transaction_date: txForm.transaction_date, created_by: ud?.user?.id
+    }]);
+    setTxForm({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10) });
     setShowAddTx(null); load();
   };
 
-  // Two-step delete: confirm intent, then require the owner's own login before it actually happens
-  const requestDeleteTransaction = () => { setDeleteAuthTx(confirmDeleteTx); setConfirmDeleteTx(null); };
   const deleteTransaction = async () => {
-    const { data: ud } = await supabase.auth.getUser();
-    await supabase.from("finance_transaction_audit").insert([{
-      transaction_id: deleteAuthTx.id, action: "delete", old_data: deleteAuthTx, changed_by: ud?.user?.id
-    }]);
-    await supabase.from("finance_transactions").delete().eq("id", deleteAuthTx.id);
-    setDeleteAuthTx(null); load();
+    await supabase.from("finance_transactions").delete().eq("id", confirmDeleteTx.id);
+    setConfirmDeleteTx(null); load();
   };
 
-  // Two-step edit: draft changes in the modal, then require the owner's own login before saving
-  const openEditTransaction = (t) => setEditTx({
-    id: t.id, category_id: t.category_id, amount: String(t.amount), description: t.description || "",
-    transaction_date: t.transaction_date, payment_method: t.payment_method || "Cash", type: t.type, member_id: t.member_id || ""
-  });
-  const requestSaveEdit = () => { setEditAuthTx(editTx); setEditTx(null); };
-  const saveEditedTransaction = async () => {
-    const original = transactions.find(t => t.id === editAuthTx.id);
-    const { data: ud } = await supabase.auth.getUser();
-    const newData = {
-      category_id: editAuthTx.category_id, amount: Number(editAuthTx.amount),
-      description: editAuthTx.description, transaction_date: editAuthTx.transaction_date, payment_method: editAuthTx.payment_method,
-      member_id: editAuthTx.member_id || null
-    };
-    await supabase.from("finance_transactions").update(newData).eq("id", editAuthTx.id);
-    await supabase.from("finance_transaction_audit").insert([{
-      transaction_id: editAuthTx.id, action: "update", old_data: original, new_data: { ...original, ...newData }, changed_by: ud?.user?.id
-    }]);
-    setEditAuthTx(null); load();
-  };
-
-  // Expense by category for pie/bar chart
+  // Expense by category for pie chart
   const expenseByCategory = useMemo(() => {
     const map = {};
     filteredTx.filter(t => t.type === "expense").forEach(t => {
@@ -2128,30 +2014,6 @@ function FinanceDashboard({ isOwner, onLock }) {
       map[name] = (map[name] || 0) + Number(t.amount);
     });
     return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [filteredTx]);
-
-  // Income by category, same shape, for its own separate chart
-  const incomeByCategory = useMemo(() => {
-    const map = {};
-    filteredTx.filter(t => t.type === "income").forEach(t => {
-      const name = t.finance_categories?.name || "Uncategorized";
-      map[name] = (map[name] || 0) + Number(t.amount);
-    });
-    return Object.entries(map).map(([name, value]) => ({ name, value }));
-  }, [filteredTx]);
-
-  // Monthly total per income category — "how much came in from each income source, each month"
-  const monthlyIncomeByCategory = useMemo(() => {
-    const months = [...new Set(filteredTx.map(t => t.transaction_date.slice(0, 7)))].sort();
-    const cats = [...new Set(filteredTx.filter(t => t.type === "income").map(t => t.finance_categories?.name || "Uncategorized"))].sort();
-    const grid = {};
-    cats.forEach(c => { grid[c] = {}; months.forEach(m => (grid[c][m] = 0)); });
-    filteredTx.filter(t => t.type === "income").forEach(t => {
-      const name = t.finance_categories?.name || "Uncategorized";
-      const month = t.transaction_date.slice(0, 7);
-      grid[name][month] = (grid[name][month] || 0) + Number(t.amount);
-    });
-    return { months, cats, grid };
   }, [filteredTx]);
 
   // Income vs Expense over time (by month)
@@ -2164,86 +2026,6 @@ function FinanceDashboard({ isOwner, onLock }) {
     });
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
   }, [filteredTx]);
-
-  // Running balances — computed from ALL transactions ever recorded, not just the selected period,
-  // so this always reflects what's actually on hand right now.
-  const cashBalance = useMemo(() => transactions.reduce((s, t) => {
-    if ((t.payment_method || "Cash") !== "Cash") return s;
-    return s + (t.type === "income" ? Number(t.amount) : -Number(t.amount));
-  }, 0), [transactions]);
-  const transferBalance = useMemo(() => transactions.reduce((s, t) => {
-    if (t.payment_method !== "Transfer") return s;
-    return s + (t.type === "income" ? Number(t.amount) : -Number(t.amount));
-  }, 0), [transactions]);
-
-  // Budget vs actual for expense categories, scaled to however many months the selected range spans
-  const monthsInRange = useMemo(() => {
-    const start = new Date(range.start), end = new Date(range.end);
-    return Math.max(1, (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth()) + 1);
-  }, [range]);
-  const budgetVsActual = useMemo(() => {
-    return expenseCategories.map(c => {
-      const budget = budgets.find(b => b.category_id === c.id);
-      const monthly = budget ? Number(budget.monthly_amount) : 0;
-      const budgeted = monthly * monthsInRange;
-      const actual = filteredTx.filter(t => t.type === "expense" && t.category_id === c.id).reduce((s, t) => s + Number(t.amount), 0);
-      return { id: c.id, name: c.name, monthly, budgeted, actual, variance: budgeted - actual };
-    }).filter(r => r.monthly > 0 || r.actual > 0);
-  }, [expenseCategories, budgets, filteredTx, monthsInRange]);
-
-  // Tithe (or any income category matching "tithe") broken down per member for this period
-  const titheByMember = useMemo(() => {
-    const map = {};
-    filteredTx.filter(t => t.type === "income" && t.member_id && (t.finance_categories?.name || "").toLowerCase().includes("tithe")).forEach(t => {
-      const key = t.member_id;
-      if (!map[key]) map[key] = { member_id: key, name: t.members?.full_name || "Unknown", total: 0, count: 0 };
-      map[key].total += Number(t.amount);
-      map[key].count += 1;
-    });
-    return Object.values(map).sort((a, b) => b.total - a.total);
-  }, [filteredTx]);
-
-  // Year-over-year: same date range, shifted back exactly one year, from the full all-time transaction set
-  const lastYearRange = useMemo(() => {
-    const shift = (d) => { const dt = new Date(d); dt.setFullYear(dt.getFullYear() - 1); return dt.toISOString().slice(0, 10); };
-    return { start: shift(range.start), end: shift(range.end) };
-  }, [range]);
-  const lastYearTx = useMemo(() => transactions.filter(t => t.transaction_date >= lastYearRange.start && t.transaction_date <= lastYearRange.end), [transactions, lastYearRange]);
-  const lastYearIncome = lastYearTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
-  const lastYearExpense = lastYearTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
-  const pctChange = (curr, prev) => prev === 0 ? (curr === 0 ? 0 : 100) : ((curr - prev) / prev * 100);
-
-  const exportPDF = () => {
-    const doc = new jsPDF();
-    doc.setFontSize(16);
-    doc.text("SCC Finance Report", 14, 18);
-    doc.setFontSize(10);
-    doc.text(`Period: ${range.label || `${range.start} to ${range.end}`}`, 14, 25);
-    doc.text(`Income: ${fmt(totalIncome)}   Expense: ${fmt(totalExpense)}   Net: ${fmt(balance)}`, 14, 31);
-    autoTable(doc, {
-      startY: 38,
-      head: [["Date", "Type", "Category", "Description", "Method", "Amount"]],
-      body: filteredTx.map(t => [t.transaction_date, t.type, t.finance_categories?.name || "", t.description || "", t.payment_method || "Cash", fmt(t.amount)]),
-      styles: { fontSize: 8 },
-      headStyles: { fillColor: [74, 14, 82] }
-    });
-    doc.save(`SCC-Finance-${range.start}_to_${range.end}.pdf`);
-  };
-
-  const exportExcel = () => {
-    const rows = filteredTx.map(t => ({
-      Date: t.transaction_date, Type: t.type, Category: t.finance_categories?.name || "",
-      Description: t.description || "", Method: t.payment_method || "Cash", Amount: Number(t.amount)
-    }));
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "Transactions");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ["Period", range.label || `${range.start} to ${range.end}`],
-      ["Total Income", totalIncome], ["Total Expense", totalExpense], ["Net Balance", balance],
-      ["Cash on Hand (all-time)", cashBalance], ["Bank/Transfer Balance (all-time)", transferBalance]
-    ]), "Summary");
-    XLSX.writeFile(wb, `SCC-Finance-${range.start}_to_${range.end}.xlsx`);
-  };
 
   return (
     <div>
@@ -2258,10 +2040,10 @@ function FinanceDashboard({ isOwner, onLock }) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-4 border-b border-[#E9E2CC] overflow-x-auto">
-        {["overview", "transactions", "categories", "budgets", "reports", ...(isOwner ? ["audit log"] : [])].map(t => (
+      <div className="flex gap-2 mb-4 border-b border-[#E9E2CC]">
+        {["overview", "transactions", "categories", "reports"].map(t => (
           <div key={t} onClick={() => setTab(t)}
-            className={`px-3 py-2 text-sm cursor-pointer capitalize font-medium whitespace-nowrap ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
+            className={`px-3 py-2 text-sm cursor-pointer capitalize font-medium ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
             {t}
           </div>
         ))}
@@ -2271,22 +2053,6 @@ function FinanceDashboard({ isOwner, onLock }) {
         <>
           {tab === "overview" && (
             <div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div className="bg-[#4A0E52] rounded-lg p-4 text-white flex items-center gap-3">
-                  <Wallet className="w-8 h-8 text-[#F3D98B]" />
-                  <div>
-                    <p className="text-xs text-[#C9A5D6]">Cash on Hand (all-time)</p>
-                    <p className="text-xl font-display">{fmt(cashBalance)}</p>
-                  </div>
-                </div>
-                <div className="bg-[#4A0E52] rounded-lg p-4 text-white flex items-center gap-3">
-                  <Landmark className="w-8 h-8 text-[#F3D98B]" />
-                  <div>
-                    <p className="text-xs text-[#C9A5D6]">Bank/Transfer Balance (all-time)</p>
-                    <p className="text-xl font-display">{fmt(transferBalance)}</p>
-                  </div>
-                </div>
-              </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                 <div className="bg-green-50 rounded-lg border border-green-100 p-4">
                   <p className="text-xs text-green-700">Total Income</p>
@@ -2338,15 +2104,10 @@ function FinanceDashboard({ isOwner, onLock }) {
                   <div key={t.id} className="flex items-center justify-between px-4 py-3">
                     <div>
                       <p className="text-sm">{t.finance_categories?.name || "Uncategorized"} <span className="text-xs text-gray-400">· {t.transaction_date}</span></p>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        {t.description && <p className="text-xs text-gray-400">{t.description}</p>}
-                        <span className="text-[10px] uppercase tracking-wide bg-[#F7F3E9] text-[#4A0E52] px-1.5 py-0.5 rounded">{t.payment_method || "Cash"}</span>
-                        {t.members?.full_name && <span className="text-[10px] bg-[#F3D98B]/40 text-[#4A0E52] px-1.5 py-0.5 rounded">{t.members.full_name}</span>}
-                      </div>
+                      {t.description && <p className="text-xs text-gray-400">{t.description}</p>}
                     </div>
                     <div className="flex items-center gap-3">
                       <span className={`text-sm font-medium ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>{t.type === "income" ? "+" : "-"}{fmt(t.amount)}</span>
-                      <div onClick={() => openEditTransaction(t)} className="p-1 cursor-pointer text-gray-400 hover:text-[#4A0E52]"><Pencil className="w-4 h-4" /></div>
                       <div onClick={() => setConfirmDeleteTx(t)} className="p-1 cursor-pointer text-red-400"><Trash2 className="w-4 h-4" /></div>
                     </div>
                   </div>
@@ -2391,99 +2152,10 @@ function FinanceDashboard({ isOwner, onLock }) {
             </div>
           )}
 
-          {tab === "budgets" && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <p className="text-xs text-gray-400">Set a recurring monthly budget for each expense category. The Reports tab compares this against what's actually been spent.</p>
-                <div onClick={() => { setNewBudgetForm({ category_id: "", amount: "" }); setShowAddBudget(true); }}
-                  className="text-xs bg-[#4A0E52] text-white rounded-md px-3 py-2 cursor-pointer flex items-center gap-1.5 whitespace-nowrap ml-3">
-                  <Plus className="w-3.5 h-3.5" /> Add Budget
-                </div>
-              </div>
-              <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
-                {expenseCategories.map(c => {
-                  const existing = budgets.find(b => b.category_id === c.id);
-                  const isEditing = editingBudget === c.id;
-                  const value = budgetInputs[c.id] !== undefined ? budgetInputs[c.id] : (existing ? String(existing.monthly_amount) : "");
-                  return (
-                    <div key={c.id} className="flex items-center justify-between gap-3 px-4 py-3">
-                      <span className="text-sm">{c.name}</span>
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-400">₦</span>
-                          <input
-                            type="number"
-                            autoFocus
-                            value={value}
-                            onChange={(e) => setBudgetInputs({ ...budgetInputs, [c.id]: e.target.value })}
-                            placeholder="0"
-                            className="w-28 border border-[#E9E2CC] rounded-md px-2 py-1.5 text-sm text-right"
-                          />
-                          <span className="text-xs text-gray-400">/mo</span>
-                          <div onClick={() => { saveBudget(c.id); setEditingBudget(null); }} className="text-xs bg-[#4A0E52] text-white rounded-md px-2.5 py-1.5 cursor-pointer">Save</div>
-                          <div onClick={() => setEditingBudget(null)} className="text-xs border border-[#E9E2CC] text-gray-500 rounded-md px-2.5 py-1.5 cursor-pointer">Cancel</div>
-                        </div>
-                      ) : existing ? (
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm text-gray-600">{fmt(existing.monthly_amount)}/mo</span>
-                          <div onClick={() => { setBudgetInputs({ ...budgetInputs, [c.id]: String(existing.monthly_amount) }); setEditingBudget(c.id); }}
-                            className="text-xs border border-[#4A0E52] text-[#4A0E52] rounded-md px-2.5 py-1.5 cursor-pointer flex items-center gap-1">
-                            <Pencil className="w-3 h-3" /> Edit
-                          </div>
-                        </div>
-                      ) : (
-                        <div onClick={() => { setBudgetInputs({ ...budgetInputs, [c.id]: "" }); setEditingBudget(c.id); }}
-                          className="text-xs bg-[#4A0E52] text-white rounded-md px-2.5 py-1.5 cursor-pointer flex items-center gap-1">
-                          <Plus className="w-3 h-3" /> Add Budget
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-                {expenseCategories.length === 0 && <p className="p-3 text-sm text-gray-400">Add expense categories first.</p>}
-              </div>
-            </div>
-          )}
-
           {tab === "reports" && (
             <div>
-              <div className="flex justify-end gap-2 mb-4">
-                <div onClick={() => setShowExportAuth("pdf")} className="text-xs border border-[#4A0E52] text-[#4A0E52] rounded-md px-3 py-2 cursor-pointer flex items-center gap-1.5"><FileText className="w-3.5 h-3.5" /> Export PDF</div>
-                <div onClick={() => setShowExportAuth("excel")} className="text-xs border border-[#4A0E52] text-[#4A0E52] rounded-md px-3 py-2 cursor-pointer flex items-center gap-1.5"><FileSpreadsheet className="w-3.5 h-3.5" /> Export Excel</div>
-              </div>
-              <div className="grid md:grid-cols-2 gap-6 mb-6">
-                <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
-                  <h3 className="font-display text-base mb-3 flex items-center gap-2 text-green-700"><TrendingUp className="w-4 h-4" /> Income Breakdown</h3>
-                  {incomeByCategory.length === 0 ? <p className="text-sm text-gray-400">No income data for this period.</p> : (
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={incomeByCategory}>
-                        <CartesianGrid stroke="#F1ECDE" />
-                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                        <YAxis tick={{ fontSize: 10 }} />
-                        <Tooltip formatter={(v) => fmt(v)} />
-                        <Bar dataKey="value" fill="#10B981" radius={[4,4,0,0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-                <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
-                  <h3 className="font-display text-base mb-3 flex items-center gap-2 text-red-700"><TrendingDown className="w-4 h-4" /> Expense Breakdown</h3>
-                  {expenseByCategory.length === 0 ? <p className="text-sm text-gray-400">No expense data for this period.</p> : (
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={expenseByCategory}>
-                        <CartesianGrid stroke="#F1ECDE" />
-                        <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                        <YAxis tick={{ fontSize: 10 }} />
-                        <Tooltip formatter={(v) => fmt(v)} />
-                        <Bar dataKey="value" fill="#A6423A" radius={[4,4,0,0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  )}
-                </div>
-              </div>
-
               <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 mb-6">
-                <h3 className="font-display text-base mb-3 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-[#4A0E52]" /> Expense Breakdown (share of total)</h3>
+                <h3 className="font-display text-base mb-3 flex items-center gap-2"><PieChartIcon className="w-4 h-4 text-[#4A0E52]" /> Expense Breakdown</h3>
                 {expenseByCategory.length === 0 ? <p className="text-sm text-gray-400">No expense data for this period.</p> : (
                   <ResponsiveContainer width="100%" height={280}>
                     <PieChart>
@@ -2496,8 +2168,7 @@ function FinanceDashboard({ isOwner, onLock }) {
                   </ResponsiveContainer>
                 )}
               </div>
-
-              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 mb-6">
+              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
                 <h3 className="font-display text-base mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#4A0E52]" /> Income vs Expense Trend</h3>
                 {monthlyTrend.length === 0 ? <p className="text-sm text-gray-400">No data yet.</p> : (
                   <ResponsiveContainer width="100%" height={260}>
@@ -2513,145 +2184,6 @@ function FinanceDashboard({ isOwner, onLock }) {
                   </ResponsiveContainer>
                 )}
               </div>
-
-              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 overflow-x-auto">
-                <h3 className="font-display text-base mb-3 flex items-center gap-2 text-green-700"><DollarSign className="w-4 h-4" /> Monthly Total per Income Source</h3>
-                {monthlyIncomeByCategory.months.length === 0 || monthlyIncomeByCategory.cats.length === 0 ? (
-                  <p className="text-sm text-gray-400">No income data for this period.</p>
-                ) : (
-                  <table className="w-full text-sm min-w-[480px]">
-                    <thead>
-                      <tr className="border-b border-[#E9E2CC] text-left text-xs text-gray-400">
-                        <th className="py-2 pr-3">Income Source</th>
-                        {monthlyIncomeByCategory.months.map(m => <th key={m} className="py-2 px-3 text-right">{m}</th>)}
-                        <th className="py-2 pl-3 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monthlyIncomeByCategory.cats.map(cat => {
-                        const rowTotal = monthlyIncomeByCategory.months.reduce((s, m) => s + (monthlyIncomeByCategory.grid[cat][m] || 0), 0);
-                        return (
-                          <tr key={cat} className="border-b border-[#F1ECDE]">
-                            <td className="py-2 pr-3">{cat}</td>
-                            {monthlyIncomeByCategory.months.map(m => (
-                              <td key={m} className="py-2 px-3 text-right text-gray-600">{fmt(monthlyIncomeByCategory.grid[cat][m] || 0)}</td>
-                            ))}
-                            <td className="py-2 pl-3 text-right font-medium text-green-700">{fmt(rowTotal)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 mb-6">
-                <h3 className="font-display text-base mb-3 flex items-center gap-2 text-green-700"><Users className="w-4 h-4" /> Tithe by Member</h3>
-                <p className="text-xs text-gray-400 mb-3">Only income transactions tagged to a member, in a category containing "Tithe."</p>
-                {titheByMember.length === 0 ? (
-                  <p className="text-sm text-gray-400">No member-tagged tithe for this period. Attribute a member when adding a Tithe income entry to see it here.</p>
-                ) : (
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-[#E9E2CC] text-left text-xs text-gray-400">
-                        <th className="py-2 pr-3">Member</th>
-                        <th className="py-2 px-3 text-right">Payments</th>
-                        <th className="py-2 pl-3 text-right">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {titheByMember.map(r => (
-                        <tr key={r.member_id} className="border-b border-[#F1ECDE]">
-                          <td className="py-2 pr-3">{r.name}</td>
-                          <td className="py-2 px-3 text-right text-gray-600">{r.count}</td>
-                          <td className="py-2 pl-3 text-right font-medium text-green-700">{fmt(r.total)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6 mb-6 mt-6">
-                <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
-                  <h3 className="font-display text-base mb-3 flex items-center gap-2"><History className="w-4 h-4 text-[#4A0E52]" /> vs Same Period Last Year</h3>
-                  <p className="text-xs text-gray-400 mb-3">{lastYearRange.start} to {lastYearRange.end}</p>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-green-700">Income</span>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">{fmt(totalIncome)} <span className="text-gray-400 font-normal">vs {fmt(lastYearIncome)}</span></p>
-                        <p className={`text-xs ${totalIncome - lastYearIncome >= 0 ? "text-green-600" : "text-red-600"}`}>
-                          {pctChange(totalIncome, lastYearIncome) >= 0 ? "+" : ""}{pctChange(totalIncome, lastYearIncome).toFixed(1)}%
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-red-700">Expense</span>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">{fmt(totalExpense)} <span className="text-gray-400 font-normal">vs {fmt(lastYearExpense)}</span></p>
-                        <p className={`text-xs ${totalExpense - lastYearExpense <= 0 ? "text-green-600" : "text-red-600"}`}>
-                          {pctChange(totalExpense, lastYearExpense) >= 0 ? "+" : ""}{pctChange(totalExpense, lastYearExpense).toFixed(1)}%
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 overflow-x-auto">
-                  <h3 className="font-display text-base mb-3 flex items-center gap-2 text-red-700"><DollarSign className="w-4 h-4" /> Budget vs Actual</h3>
-                  {budgetVsActual.length === 0 ? (
-                    <p className="text-sm text-gray-400">No budgets set yet — add them in the Budgets tab.</p>
-                  ) : (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="border-b border-[#E9E2CC] text-left text-xs text-gray-400">
-                          <th className="py-2 pr-3">Category</th>
-                          <th className="py-2 px-3 text-right">Budgeted</th>
-                          <th className="py-2 px-3 text-right">Actual</th>
-                          <th className="py-2 pl-3 text-right">Variance</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {budgetVsActual.map(r => (
-                          <tr key={r.id} className="border-b border-[#F1ECDE]">
-                            <td className="py-2 pr-3">{r.name}</td>
-                            <td className="py-2 px-3 text-right text-gray-600">{fmt(r.budgeted)}</td>
-                            <td className="py-2 px-3 text-right text-gray-600">{fmt(r.actual)}</td>
-                            <td className={`py-2 pl-3 text-right font-medium ${r.variance >= 0 ? "text-green-600" : "text-red-600"}`}>
-                              {r.variance >= 0 ? `${fmt(r.variance)} under` : `${fmt(Math.abs(r.variance))} over`}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          {tab === "audit log" && isOwner && (
-            <div className="bg-white rounded-lg border border-[#E9E2CC] divide-y divide-[#F1ECDE]">
-              <p className="text-xs text-gray-400 p-4 pb-2">Every create, edit, and delete on finance transactions — owner-only view, append-only.</p>
-              {auditLog.length === 0 && <p className="p-4 text-sm text-gray-400">No changes recorded yet.</p>}
-              {auditLog.map(a => (
-                <div key={a.id} className="px-4 py-3 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className={`text-xs font-medium uppercase tracking-wide ${a.action === "create" ? "text-green-600" : a.action === "delete" ? "text-red-600" : "text-[#4A0E52]"}`}>{a.action}</span>
-                    <span className="text-xs text-gray-400">{new Date(a.changed_at).toLocaleString()}</span>
-                  </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    By {a.profiles?.full_name || "Unknown"}
-                    {a.action === "update" && a.old_data && a.new_data && (
-                      <> · {fmt(a.old_data.amount)} → {fmt(a.new_data.amount)}</>
-                    )}
-                    {a.action !== "update" && (a.new_data || a.old_data) && (
-                      <> · {fmt((a.new_data || a.old_data).amount)}</>
-                    )}
-                  </p>
-                </div>
-              ))}
             </div>
           )}
         </>
@@ -2673,21 +2205,6 @@ function FinanceDashboard({ isOwner, onLock }) {
             </label>
             <Field label="Amount (₦)" type="number" value={txForm.amount} onChange={(v) => setTxForm({ ...txForm, amount: v })} />
             <Field label="Date" type="date" value={txForm.transaction_date} onChange={(v) => setTxForm({ ...txForm, transaction_date: v })} />
-            {showAddTx === "income" && (
-              <label className="block text-xs text-gray-500 mb-3">Member (optional — for tithe/giving tracking)
-                <div className="mt-1"><MemberPicker members={members} value={txForm.member_id} onChange={(v) => setTxForm({ ...txForm, member_id: v })} /></div>
-              </label>
-            )}
-            <label className="block text-xs text-gray-500 mb-3">Payment Method
-              <div className="mt-1 flex gap-2">
-                {["Cash", "Transfer"].map(pm => (
-                  <div key={pm} onClick={() => setTxForm({ ...txForm, payment_method: pm })}
-                    className={`flex-1 text-center text-sm rounded-md py-2 cursor-pointer border ${txForm.payment_method === pm ? "bg-[#4A0E52] text-white border-[#4A0E52]" : "border-[#E9E2CC] text-gray-500"}`}>
-                    {pm}
-                  </div>
-                ))}
-              </div>
-            </label>
             <Field label="Description (optional)" value={txForm.description} onChange={(v) => setTxForm({ ...txForm, description: v })} />
             <div onClick={addTransaction} className="mt-2 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Save</div>
           </div>
@@ -2710,91 +2227,8 @@ function FinanceDashboard({ isOwner, onLock }) {
         </div>
       )}
 
-      {/* Edit Transaction Modal */}
-      {editTx && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-lg text-[#4A0E52] capitalize">Edit {editTx.type}</h2>
-              <div onClick={() => setEditTx(null)} className="cursor-pointer"><X className="w-5 h-5" /></div>
-            </div>
-            <label className="block text-xs text-gray-500 mb-3">Category
-              <select value={editTx.category_id} onChange={(e) => setEditTx({ ...editTx, category_id: e.target.value })} className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
-                <option value="">Select category</option>
-                {(editTx.type === "income" ? incomeCategories : expenseCategories).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            </label>
-            <Field label="Amount (₦)" type="number" value={editTx.amount} onChange={(v) => setEditTx({ ...editTx, amount: v })} />
-            <Field label="Date" type="date" value={editTx.transaction_date} onChange={(v) => setEditTx({ ...editTx, transaction_date: v })} />
-            {editTx.type === "income" && (
-              <label className="block text-xs text-gray-500 mb-3">Member (optional — for tithe/giving tracking)
-                <div className="mt-1"><MemberPicker members={members} value={editTx.member_id} onChange={(v) => setEditTx({ ...editTx, member_id: v })} /></div>
-              </label>
-            )}
-            <label className="block text-xs text-gray-500 mb-3">Payment Method
-              <div className="mt-1 flex gap-2">
-                {["Cash", "Transfer"].map(pm => (
-                  <div key={pm} onClick={() => setEditTx({ ...editTx, payment_method: pm })}
-                    className={`flex-1 text-center text-sm rounded-md py-2 cursor-pointer border ${editTx.payment_method === pm ? "bg-[#4A0E52] text-white border-[#4A0E52]" : "border-[#E9E2CC] text-gray-500"}`}>
-                    {pm}
-                  </div>
-                ))}
-              </div>
-            </label>
-            <Field label="Description (optional)" value={editTx.description} onChange={(v) => setEditTx({ ...editTx, description: v })} />
-            <p className="text-xs text-gray-400 mb-2">Saving requires owner confirmation, same as delete.</p>
-            <div onClick={requestSaveEdit} className="mt-1 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Save Changes</div>
-          </div>
-        </div>
-      )}
-      {editAuthTx && (
-        <OwnerReAuthModal
-          title="Owner Confirmation Required"
-          onSuccess={saveEditedTransaction}
-          onClose={() => setEditAuthTx(null)}
-        />
-      )}
-
-      {/* Add Budget Modal */}
-      {showAddBudget && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
-          <div className="bg-white rounded-lg p-6 w-full max-w-sm">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="font-display text-lg text-[#4A0E52]">Add Budget</h2>
-              <div onClick={() => setShowAddBudget(false)} className="cursor-pointer"><X className="w-5 h-5" /></div>
-            </div>
-            <label className="block text-xs text-gray-500 mb-3">Expense Category
-              <select value={newBudgetForm.category_id} onChange={(e) => setNewBudgetForm({ ...newBudgetForm, category_id: e.target.value })}
-                className="mt-1 w-full border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
-                <option value="">Select category</option>
-                {expenseCategories.map(c => (
-                  <option key={c.id} value={c.id}>{c.name}{budgets.find(b => b.category_id === c.id) ? " (already has a budget)" : ""}</option>
-                ))}
-              </select>
-            </label>
-            <Field label="Monthly Budget (₦)" type="number" value={newBudgetForm.amount} onChange={(v) => setNewBudgetForm({ ...newBudgetForm, amount: v })} />
-            <div onClick={addNewBudget} className="mt-1 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Save Budget</div>
-          </div>
-        </div>
-      )}
-
-      {confirmDeleteTx && <ConfirmDialog name={confirmDeleteTx.description || confirmDeleteTx.finance_categories?.name || "this transaction"} type="transaction" onConfirm={requestDeleteTransaction} onCancel={() => setConfirmDeleteTx(null)} />}
-      {deleteAuthTx && (
-        <OwnerReAuthModal
-          title="Owner Confirmation Required"
-          onSuccess={deleteTransaction}
-          onClose={() => setDeleteAuthTx(null)}
-        />
-      )}
+      {confirmDeleteTx && <ConfirmDialog name={confirmDeleteTx.description || confirmDeleteTx.finance_categories?.name || "this transaction"} type="transaction" onConfirm={deleteTransaction} onCancel={() => setConfirmDeleteTx(null)} />}
       {confirmDeleteCat && <ConfirmDialog name={confirmDeleteCat.name} type="category" onConfirm={deleteCategory} onCancel={() => setConfirmDeleteCat(null)} />}
-      {showExportAuth && (
-        <PasswordPromptModal
-          featureKey="download"
-          title="Confirm Export"
-          onSuccess={() => { const kind = showExportAuth; setShowExportAuth(null); kind === "pdf" ? exportPDF() : exportExcel(); }}
-          onClose={() => setShowExportAuth(null)}
-        />
-      )}
     </div>
   );
 }
@@ -3105,10 +2539,14 @@ export default function App() {
   const [view, setView] = useState("dashboard");
   const [members, setMembers] = useState([]);
   const [globalSelectedMember, setGlobalSelectedMember] = useState(null);
-  const [attendanceJump, setAttendanceJump] = useState(null); // { date, service, nonce } — set when jumping in from Reports
+  const [attendancePrefill, setAttendancePrefill] = useState(null);
 
-  const goToAttendance = (date, service) => {
-    setAttendanceJump({ date, service, nonce: Date.now() });
+  // Normal nav clicks clear any pending prefill so a stale date/service doesn't leak into an unrelated visit
+  const navigateTo = (viewId) => { setAttendancePrefill(null); setView(viewId); };
+
+  // Jump straight into Attendance with a specific service+date pre-loaded (used by the Reports drill-down)
+  const goToAttendanceFor = (service, date) => {
+    setAttendancePrefill({ service, date });
     setView("attendance");
   };
 
@@ -3132,11 +2570,11 @@ export default function App() {
   if (!session) return <LoginScreen />;
 
   return (
-    <Shell view={view} setView={setView} isAdmin={isAdmin} isOwner={isOwner} signOut={signOut} members={members} onSelectMember={setGlobalSelectedMember}>
-      {view === "dashboard" && <DashboardView members={members} setView={setView} isAdmin={isAdmin} profile={profile} />}
-      {view === "attendance" && <AttendanceView members={members} jump={attendanceJump} />}
+    <Shell view={view} setView={navigateTo} isAdmin={isAdmin} isOwner={isOwner} signOut={signOut} members={members} onSelectMember={setGlobalSelectedMember}>
+      {view === "dashboard" && <DashboardView members={members} setView={navigateTo} isAdmin={isAdmin} profile={profile} />}
+      {view === "attendance" && <AttendanceView members={members} prefill={attendancePrefill} />}
       {view === "members" && <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
-      {view === "reports" && <ReportsView members={members} onGoToAttendance={goToAttendance} />}
+      {view === "reports" && <ReportsView members={members} onEditAttendance={goToAttendanceFor} />}
       {view === "departments" && <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
       {view === "finance" && (!isAdmin || isOwner) && <FinanceView isOwner={isOwner} />}
       {view === "staff" && isAdmin && <StaffView isOwner={isOwner} />}
