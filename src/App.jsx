@@ -4,7 +4,7 @@ import {
   Save, Loader2, TrendingDown, LogOut, Upload, Download, UserCog,
   Home, BookOpen, Archive, Phone, Mail, MapPin, Briefcase,
   Heart, Star, AlertTriangle, CheckCheck, ChevronDown, Printer, RefreshCw,
-  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff, MessageCircle
+  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff, MessageCircle, Wallet, Landmark
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -26,6 +26,7 @@ const SERVICES = [
 
 const STATUS_OPTIONS = ["Active", "New Convert", "Visitor", "Inactive"];
 const PRESETS = ["Today","Yesterday","This week","Last week","This month","Last month","Last 7 days","Last 30 days","Last 1 year","Last 2 years","Last 3 years"];
+const PAYMENT_METHODS = ["Cash", "Transfer"];
 
 /* ---- Offline attendance queue — stores unsent records locally, syncs when back online ---- */
 const OFFLINE_QUEUE_KEY = "scc_offline_attendance_queue";
@@ -1952,10 +1953,12 @@ function FinanceDashboard({ isOwner, onLock }) {
   const [showAddTx, setShowAddTx] = useState(null); // "income" | "expense" | null
   const [showAddCat, setShowAddCat] = useState(null);
   const [newCatName, setNewCatName] = useState("");
-  const [txForm, setTxForm] = useState({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10) });
+  const [txForm, setTxForm] = useState({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10), payment_method: "" });
+  const [txFormError, setTxFormError] = useState("");
   const [confirmDeleteTx, setConfirmDeleteTx] = useState(null);
   const [confirmDeleteCat, setConfirmDeleteCat] = useState(null);
   const [range, setRange] = useState(() => ({ ...presetToRange("This month"), label: "This month" }));
+  const [paymentFilter, setPaymentFilter] = useState("All"); // "All" | "Cash" | "Transfer"
 
   const load = async () => {
     setLoading(true);
@@ -1969,10 +1972,24 @@ function FinanceDashboard({ isOwner, onLock }) {
   };
   useEffect(() => { load(); }, []);
 
-  const filteredTx = transactions.filter(t => t.transaction_date >= range.start && t.transaction_date <= range.end);
+  const filteredTx = transactions
+    .filter(t => t.transaction_date >= range.start && t.transaction_date <= range.end)
+    .filter(t => paymentFilter === "All" || (t.payment_method || "Cash") === paymentFilter);
   const totalIncome = filteredTx.filter(t => t.type === "income").reduce((s, t) => s + Number(t.amount), 0);
   const totalExpense = filteredTx.filter(t => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0);
   const balance = totalIncome - totalExpense;
+
+  // Cash vs Transfer breakdown (always computed off the date-range-filtered set, ignoring the payment filter,
+  // so the breakdown itself shows the full split regardless of which slice is currently being viewed)
+  const dateFilteredTx = transactions.filter(t => t.transaction_date >= range.start && t.transaction_date <= range.end);
+  const byPaymentMethod = useMemo(() => {
+    const summary = { Cash: { income: 0, expense: 0 }, Transfer: { income: 0, expense: 0 } };
+    dateFilteredTx.forEach(t => {
+      const method = t.payment_method === "Transfer" ? "Transfer" : "Cash";
+      summary[method][t.type] += Number(t.amount);
+    });
+    return summary;
+  }, [dateFilteredTx]);
 
   const incomeCategories = categories.filter(c => c.type === "income");
   const expenseCategories = categories.filter(c => c.type === "expense");
@@ -1991,13 +2008,16 @@ function FinanceDashboard({ isOwner, onLock }) {
   };
 
   const addTransaction = async () => {
-    if (!txForm.category_id || !txForm.amount) return;
+    if (!txForm.category_id || !txForm.amount) { setTxFormError("Please choose a category and enter an amount."); return; }
+    if (!txForm.payment_method) { setTxFormError("Please confirm whether this was paid by Cash or Transfer."); return; }
+    setTxFormError("");
     const { data: ud } = await supabase.auth.getUser();
     await supabase.from("finance_transactions").insert([{
       type: showAddTx, category_id: txForm.category_id, amount: Number(txForm.amount),
-      description: txForm.description, transaction_date: txForm.transaction_date, created_by: ud?.user?.id
+      description: txForm.description, transaction_date: txForm.transaction_date,
+      payment_method: txForm.payment_method, created_by: ud?.user?.id
     }]);
-    setTxForm({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10) });
+    setTxForm({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10), payment_method: "" });
     setShowAddTx(null); load();
   };
 
@@ -2027,6 +2047,18 @@ function FinanceDashboard({ isOwner, onLock }) {
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
   }, [filteredTx]);
 
+  // Payment method trend by month (Cash vs Transfer totals, income+expense combined per method)
+  const paymentMethodTrend = useMemo(() => {
+    const map = {};
+    dateFilteredTx.forEach(t => {
+      const month = t.transaction_date.slice(0, 7);
+      if (!map[month]) map[month] = { month, Cash: 0, Transfer: 0 };
+      const method = t.payment_method === "Transfer" ? "Transfer" : "Cash";
+      map[month][method] += Number(t.amount);
+    });
+    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
+  }, [dateFilteredTx]);
+
   return (
     <div>
       <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
@@ -2040,7 +2072,7 @@ function FinanceDashboard({ isOwner, onLock }) {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 mb-4 border-b border-[#E9E2CC]">
+      <div className="flex gap-2 mb-4 border-b border-[#E9E2CC] flex-wrap">
         {["overview", "transactions", "categories", "reports"].map(t => (
           <div key={t} onClick={() => setTab(t)}
             className={`px-3 py-2 text-sm cursor-pointer capitalize font-medium ${tab === t ? "text-[#4A0E52] border-b-2 border-[#4A0E52]" : "text-gray-400"}`}>
@@ -2048,6 +2080,19 @@ function FinanceDashboard({ isOwner, onLock }) {
           </div>
         ))}
       </div>
+
+      {/* Payment method filter — applies to overview & transactions tabs */}
+      {(tab === "overview" || tab === "transactions") && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs text-gray-400">Payment type:</span>
+          {["All", "Cash", "Transfer"].map(p => (
+            <div key={p} onClick={() => setPaymentFilter(p)}
+              className={`text-xs px-3 py-1.5 rounded-full border cursor-pointer flex items-center gap-1 ${paymentFilter === p ? "bg-[#4A0E52] text-white border-[#4A0E52]" : "border-[#E9E2CC] text-gray-500"}`}>
+              {p === "Cash" && <Wallet className="w-3 h-3" />}{p === "Transfer" && <Landmark className="w-3 h-3" />}{p}
+            </div>
+          ))}
+        </div>
+      )}
 
       {loading ? <Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /> : (
         <>
@@ -2067,6 +2112,21 @@ function FinanceDashboard({ isOwner, onLock }) {
                   <p className={`text-2xl font-display ${balance >= 0 ? "text-[#4A0E52]" : "text-red-700"}`}>{fmt(balance)}</p>
                 </div>
               </div>
+
+              {/* Cash vs Transfer summary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div className="bg-white rounded-lg border border-[#E9E2CC] p-4">
+                  <p className="text-xs text-gray-400 mb-2 flex items-center gap-1"><Wallet className="w-3.5 h-3.5 text-[#4A0E52]" /> Cash</p>
+                  <div className="flex justify-between text-sm mb-1"><span className="text-gray-500">Income</span><span className="text-green-600 font-medium">{fmt(byPaymentMethod.Cash.income)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Expense</span><span className="text-red-600 font-medium">{fmt(byPaymentMethod.Cash.expense)}</span></div>
+                </div>
+                <div className="bg-white rounded-lg border border-[#E9E2CC] p-4">
+                  <p className="text-xs text-gray-400 mb-2 flex items-center gap-1"><Landmark className="w-3.5 h-3.5 text-[#4A0E52]" /> Transfer</p>
+                  <div className="flex justify-between text-sm mb-1"><span className="text-gray-500">Income</span><span className="text-green-600 font-medium">{fmt(byPaymentMethod.Transfer.income)}</span></div>
+                  <div className="flex justify-between text-sm"><span className="text-gray-500">Expense</span><span className="text-red-600 font-medium">{fmt(byPaymentMethod.Transfer.expense)}</span></div>
+                </div>
+              </div>
+
               <div className="flex gap-3 mb-6">
                 <div onClick={() => setShowAddTx("income")} className="flex-1 bg-green-600 text-white rounded-lg py-3 text-center text-sm cursor-pointer flex items-center justify-center gap-2">
                   <Plus className="w-4 h-4" /> Add Income
@@ -2080,7 +2140,13 @@ function FinanceDashboard({ isOwner, onLock }) {
                 {filteredTx.slice(0, 8).map(t => (
                   <div key={t.id} className="flex items-center justify-between px-4 py-3">
                     <div>
-                      <p className="text-sm">{t.finance_categories?.name || "Uncategorized"}</p>
+                      <p className="text-sm flex items-center gap-2">
+                        {t.finance_categories?.name || "Uncategorized"}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${t.payment_method === "Transfer" ? "bg-blue-50 text-blue-600" : "bg-[#FEF9EC] text-[#C9A227]"}`}>
+                          {t.payment_method === "Transfer" ? <Landmark className="w-2.5 h-2.5" /> : <Wallet className="w-2.5 h-2.5" />}
+                          {t.payment_method || "Cash"}
+                        </span>
+                      </p>
                       <p className="text-xs text-gray-400">{t.description || t.transaction_date}</p>
                     </div>
                     <span className={`text-sm font-medium ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
@@ -2103,7 +2169,13 @@ function FinanceDashboard({ isOwner, onLock }) {
                 {filteredTx.map(t => (
                   <div key={t.id} className="flex items-center justify-between px-4 py-3">
                     <div>
-                      <p className="text-sm">{t.finance_categories?.name || "Uncategorized"} <span className="text-xs text-gray-400">· {t.transaction_date}</span></p>
+                      <p className="text-sm flex items-center gap-2">
+                        {t.finance_categories?.name || "Uncategorized"} <span className="text-xs text-gray-400">· {t.transaction_date}</span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full flex items-center gap-0.5 ${t.payment_method === "Transfer" ? "bg-blue-50 text-blue-600" : "bg-[#FEF9EC] text-[#C9A227]"}`}>
+                          {t.payment_method === "Transfer" ? <Landmark className="w-2.5 h-2.5" /> : <Wallet className="w-2.5 h-2.5" />}
+                          {t.payment_method || "Cash"}
+                        </span>
+                      </p>
                       {t.description && <p className="text-xs text-gray-400">{t.description}</p>}
                     </div>
                     <div className="flex items-center gap-3">
@@ -2168,7 +2240,7 @@ function FinanceDashboard({ isOwner, onLock }) {
                   </ResponsiveContainer>
                 )}
               </div>
-              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
+              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 mb-6">
                 <h3 className="font-display text-base mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#4A0E52]" /> Income vs Expense Trend</h3>
                 {monthlyTrend.length === 0 ? <p className="text-sm text-gray-400">No data yet.</p> : (
                   <ResponsiveContainer width="100%" height={260}>
@@ -2180,6 +2252,53 @@ function FinanceDashboard({ isOwner, onLock }) {
                       <Legend />
                       <Bar dataKey="income" fill="#10B981" radius={[4,4,0,0]} />
                       <Bar dataKey="expense" fill="#A6423A" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+
+              {/* Cash vs Transfer report */}
+              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6 mb-6">
+                <h3 className="font-display text-base mb-3 flex items-center gap-2"><Wallet className="w-4 h-4 text-[#4A0E52]" /> Cash vs Transfer</h3>
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={[
+                        { name: "Cash", value: byPaymentMethod.Cash.income + byPaymentMethod.Cash.expense },
+                        { name: "Transfer", value: byPaymentMethod.Transfer.income + byPaymentMethod.Transfer.expense }
+                      ]}
+                      dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={(entry) => entry.name}>
+                      <Cell fill="#C9A227" />
+                      <Cell fill="#3B82F6" />
+                    </Pie>
+                    <Tooltip formatter={(v) => fmt(v)} />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="grid grid-cols-2 gap-3 mt-3">
+                  <div className="text-center bg-[#FEF9EC] rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Cash Total</p>
+                    <p className="text-lg font-display text-[#C9A227]">{fmt(byPaymentMethod.Cash.income + byPaymentMethod.Cash.expense)}</p>
+                  </div>
+                  <div className="text-center bg-blue-50 rounded-lg p-3">
+                    <p className="text-xs text-gray-500">Transfer Total</p>
+                    <p className="text-lg font-display text-blue-600">{fmt(byPaymentMethod.Transfer.income + byPaymentMethod.Transfer.expense)}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-white rounded-lg border border-[#E9E2CC] p-6">
+                <h3 className="font-display text-base mb-3 flex items-center gap-2"><TrendingUp className="w-4 h-4 text-[#4A0E52]" /> Cash vs Transfer Trend</h3>
+                {paymentMethodTrend.length === 0 ? <p className="text-sm text-gray-400">No data yet.</p> : (
+                  <ResponsiveContainer width="100%" height={240}>
+                    <BarChart data={paymentMethodTrend}>
+                      <CartesianGrid stroke="#F1ECDE" />
+                      <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <Tooltip formatter={(v) => fmt(v)} />
+                      <Legend />
+                      <Bar dataKey="Cash" fill="#C9A227" radius={[4,4,0,0]} />
+                      <Bar dataKey="Transfer" fill="#3B82F6" radius={[4,4,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -2205,7 +2324,19 @@ function FinanceDashboard({ isOwner, onLock }) {
             </label>
             <Field label="Amount (₦)" type="number" value={txForm.amount} onChange={(v) => setTxForm({ ...txForm, amount: v })} />
             <Field label="Date" type="date" value={txForm.transaction_date} onChange={(v) => setTxForm({ ...txForm, transaction_date: v })} />
+            <label className="block text-xs text-gray-500 mb-3">
+              Payment Type *
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {PAYMENT_METHODS.map(pm => (
+                  <div key={pm} onClick={() => setTxForm({ ...txForm, payment_method: pm })}
+                    className={`flex items-center justify-center gap-2 border rounded-md py-2.5 text-sm cursor-pointer ${txForm.payment_method === pm ? "border-[#4A0E52] bg-[#F7F3E9] text-[#4A0E52] font-medium" : "border-[#E9E2CC] text-gray-500"}`}>
+                    {pm === "Cash" ? <Wallet className="w-4 h-4" /> : <Landmark className="w-4 h-4" />} {pm}
+                  </div>
+                ))}
+              </div>
+            </label>
             <Field label="Description (optional)" value={txForm.description} onChange={(v) => setTxForm({ ...txForm, description: v })} />
+            {txFormError && <p className="text-xs text-red-600 mb-3">{txFormError}</p>}
             <div onClick={addTransaction} className="mt-2 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Save</div>
           </div>
         </div>
