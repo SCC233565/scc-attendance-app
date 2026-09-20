@@ -4,7 +4,7 @@ import {
   Save, Loader2, TrendingDown, LogOut, Upload, Download, UserCog,
   Home, BookOpen, Archive, Phone, Mail, MapPin, Briefcase,
   Heart, Star, AlertTriangle, CheckCheck, ChevronDown, Printer, RefreshCw,
-  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff, MessageCircle, Wallet, Landmark
+  Lock, DollarSign, TrendingUp, Settings, Eye, EyeOff, PieChart as PieChartIcon, WifiOff, MessageCircle, Wallet, Landmark, QrCode
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -13,16 +13,28 @@ import {
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
 import { useAuth } from "./useAuth";
+import PublicRouter, { getPublicRoute } from "./PublicPages";
+import {
+  SectionToggle, ProgramsView, SpecialMembersPanel, SpecialDepartmentsPanel,
+  SpecialAttendancePanel, SpecialReportsPanel, ChurchMemberCode, loadAttendanceTypes
+} from "./SpecialProgram";
 
 function Logo({ className = "h-10" }) {
   return <img src="/logo.png" alt="SCC" style={{maxHeight:'55px', maxWidth:'160px', width:'auto', height:'auto', display:'block'}} />;
 }
 
+// Attendance types now come from the attendance_types table (managed by Secretariat).
+// These three are only the fallback until the list loads.
 const SERVICES = [
-  { id: "Sunday Service", label: "Sunday Service" },
-  { id: "Wednesday Service", label: "Wednesday Service" },
-  { id: "7HWG", label: "7HWG (Monthly)" }
+  { id: "Sunday Service", label: "Sunday Service", active: true },
+  { id: "Wednesday Service", label: "Wednesday Service", active: true },
+  { id: "7HWG", label: "7HWG (Monthly)", active: true }
 ];
+function applyServiceTypes(types) {
+  if (!types || !types.length) return;
+  SERVICES.length = 0;
+  types.forEach(t => SERVICES.push({ id: t.name, label: t.name === "7HWG" ? "7HWG (Monthly)" : t.name, active: t.active }));
+}
 
 const STATUS_OPTIONS = ["Active", "New Convert", "Visitor", "Inactive"];
 const PRESETS = ["Today","Yesterday","This week","Last week","This month","Last month","Last 7 days","Last 30 days","Last 1 year","Last 2 years","Last 3 years"];
@@ -508,6 +520,7 @@ function Shell({ view, setView, isAdmin, isOwner, signOut, members, onSelectMemb
     { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "departments", label: "Depts", icon: BookOpen },
     ...(!isAdmin || isOwner ? [{ id: "finance", label: "Finance", icon: DollarSign }] : []),
+    ...(isAdmin ? [{ id: "programs", label: "Programs", icon: QrCode }] : []),
     ...(isAdmin ? [{ id: "staff", label: "Secretariat", icon: UserCog }] : [])
   ];
   return (
@@ -1044,6 +1057,7 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
                   <p className="text-sm">{member.notes}</p>
                 </div>
               )}
+              <ChurchMemberCode memberId={member.id} isAdmin={isAdmin} />
             </div>
           ) : tab === "edit" ? (
             <div>
@@ -1139,7 +1153,7 @@ function MemberProfileModal({ member: initialMember, onClose, isAdmin, onEdit, o
    ============================================================ */
 function AttendanceView({ members: allMembers, prefill }) {
   const members = allMembers.filter(m => !m.archived); // never mark attendance for archived members
-  const [service, setService] = useState(prefill?.service || SERVICES[0].id);
+  const [service, setService] = useState(prefill?.service || (SERVICES.find(s => s.active !== false) || SERVICES[0]).id);
   const [date, setDate] = useState(prefill?.date || new Date().toISOString().slice(0, 10));
   const [present, setPresent] = useState({});
   const [originalPresent, setOriginalPresent] = useState({}); // snapshot of what's actually saved in the DB
@@ -1179,7 +1193,7 @@ function AttendanceView({ members: allMembers, prefill }) {
   const handleDateChange = (newDate) => {
     setDate(newDate);
     const matched = serviceForDate(newDate);
-    if (matched) setService(matched);
+    if (matched && SERVICES.some(s => s.id === matched && s.active !== false)) setService(matched);
   };
 
   const [savedOffline, setSavedOffline] = useState(false);
@@ -1250,7 +1264,7 @@ function AttendanceView({ members: allMembers, prefill }) {
       <h1 className="font-display text-2xl text-[#4A0E52] mb-4">SCC Attendance</h1>
       <div className="flex flex-wrap gap-3 mb-2">
         <select value={service} onChange={(e) => setService(e.target.value)} className="border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white">
-          {SERVICES.map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
+          {SERVICES.filter(s => s.active !== false || s.id === service).map((s) => <option key={s.id} value={s.id}>{s.label}</option>)}
         </select>
         <input type="date" value={date} onChange={(e) => handleDateChange(e.target.value)} className="border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white" />
         <div className="relative flex-1 min-w-[180px]">
@@ -2671,6 +2685,15 @@ export default function App() {
   const [members, setMembers] = useState([]);
   const [globalSelectedMember, setGlobalSelectedMember] = useState(null);
   const [attendancePrefill, setAttendancePrefill] = useState(null);
+  const [section, setSection] = useState("church"); // "church" | "special" — Special Program is kept fully separate
+  const [, setTypesTick] = useState(0);
+  const publicRoute = getPublicRoute(); // /r/<token>, /a/<token>, /me are public pages (no login)
+
+  const refreshTypes = useCallback(async () => {
+    const t = await loadAttendanceTypes();
+    if (t) { applyServiceTypes(t); setTypesTick(n => n + 1); }
+  }, []);
+  useEffect(() => { if (session) refreshTypes(); }, [session, refreshTypes]);
 
   // Normal nav clicks clear any pending prefill so a stale date/service doesn't leak into an unrelated visit
   const navigateTo = (viewId) => { setAttendancePrefill(null); setView(viewId); };
@@ -2697,16 +2720,19 @@ export default function App() {
 
   useEffect(() => { if (session) refreshMembers(); }, [session, refreshMembers]);
 
+  if (publicRoute) return <PublicRouter route={publicRoute} />;
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#F7F3E9]"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>;
   if (!session) return <LoginScreen />;
 
   return (
     <Shell view={view} setView={navigateTo} isAdmin={isAdmin} isOwner={isOwner} signOut={signOut} members={members} onSelectMember={setGlobalSelectedMember}>
       {view === "dashboard" && <DashboardView members={members} setView={navigateTo} isAdmin={isAdmin} profile={profile} />}
-      {view === "attendance" && <AttendanceView members={members} prefill={attendancePrefill} />}
-      {view === "members" && <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
-      {view === "reports" && <ReportsView members={members} onEditAttendance={goToAttendanceFor} />}
-      {view === "departments" && <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} />}
+      {["attendance", "members", "reports", "departments"].includes(view) && <SectionToggle section={section} setSection={setSection} />}
+      {view === "attendance" && (section === "church" ? <AttendanceView members={members} prefill={attendancePrefill} /> : <SpecialAttendancePanel />)}
+      {view === "members" && (section === "church" ? <MembersView members={members} refresh={refreshMembers} isAdmin={isAdmin} /> : <SpecialMembersPanel isAdmin={isAdmin} />)}
+      {view === "reports" && (section === "church" ? <ReportsView members={members} onEditAttendance={goToAttendanceFor} /> : <SpecialReportsPanel />)}
+      {view === "departments" && (section === "church" ? <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} /> : <SpecialDepartmentsPanel isAdmin={isAdmin} />)}
+      {view === "programs" && isAdmin && <ProgramsView onTypesChanged={refreshTypes} />}
       {view === "finance" && (!isAdmin || isOwner) && <FinanceView isOwner={isOwner} />}
       {view === "staff" && isAdmin && <StaffView isOwner={isOwner} />}
       {globalSelectedMember && (
