@@ -92,12 +92,22 @@ function RegisterPage({ token }) {
 
   const fields = (program.form_fields || []).filter(f => f.key !== "full_name" && f.key !== "phone");
   const set = (k, v) => setAnswers(a => ({ ...a, [k]: v }));
+  const toggleOption = (k, opt) => setAnswers(a => {
+    const cur = Array.isArray(a[k]) ? a[k] : [];
+    const next = cur.includes(opt) ? cur.filter(v => v !== opt) : [...cur, opt];
+    return { ...a, [k]: next };
+  });
 
   const submit = async () => {
     setErr("");
     if (!answers.full_name?.trim()) return setErr("Please enter your full name.");
     if (!answers.phone?.trim()) return setErr("Please enter your phone number.");
-    for (const f of fields) if (f.required && !answers[f.key]?.trim()) return setErr(`${f.label} is required.`);
+    for (const f of fields) {
+      if (!f.required) continue;
+      const v = answers[f.key];
+      const empty = f.type === "checkbox" ? !Array.isArray(v) || v.length === 0 : !v?.trim();
+      if (empty) return setErr(`${f.label} is required.`);
+    }
     if (pin && !/^\d{4,6}$/.test(pin)) return setErr("PIN must be 4 to 6 digits, or leave it empty.");
     setBusy(true);
     const { ok, data } = await api({ action: "register", token, answers, pin: pin || undefined });
@@ -146,6 +156,15 @@ function RegisterPage({ token }) {
                 <option value="">Select…</option>
                 {(f.options || []).map(o => <option key={o} value={o}>{o}</option>)}
               </select>
+            ) : f.type === "checkbox" ? (
+              <div className="mt-1.5 space-y-1.5 border border-[#E9E2CC] rounded-md p-2.5 bg-white">
+                {(f.options || []).map(o => (
+                  <label key={o} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input type="checkbox" checked={(answers[f.key] || []).includes(o)} onChange={() => toggleOption(f.key, o)} />
+                    {o}
+                  </label>
+                ))}
+              </div>
             ) : (
               <input className={inputCls + " mt-1"} type={f.type === "date" ? "date" : "text"} value={answers[f.key] || ""} onChange={e => set(f.key, e.target.value)} />
             )}
