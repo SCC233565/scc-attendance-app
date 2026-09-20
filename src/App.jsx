@@ -2679,9 +2679,15 @@ function StaffView({ isOwner }) {
 /* ============================================================
    APP ROOT
    ============================================================ */
+const VIEW_IDS = ["dashboard", "attendance", "members", "reports", "departments", "programs", "finance", "staff"];
+const viewFromPath = () => {
+  const id = window.location.pathname.replace(/^\/+|\/+$/g, "");
+  return VIEW_IDS.includes(id) ? id : "dashboard";
+};
+
 export default function App() {
   const { session, profile, loading, signOut, isAdmin, isOwner } = useAuth();
-  const [view, setView] = useState("dashboard");
+  const [view, setView] = useState(viewFromPath);
   const [members, setMembers] = useState([]);
   const [globalSelectedMember, setGlobalSelectedMember] = useState(null);
   const [attendancePrefill, setAttendancePrefill] = useState(null);
@@ -2696,13 +2702,26 @@ export default function App() {
   useEffect(() => { if (session) refreshTypes(); }, [session, refreshTypes]);
 
   // Normal nav clicks clear any pending prefill so a stale date/service doesn't leak into an unrelated visit
-  const navigateTo = (viewId) => { setAttendancePrefill(null); setView(viewId); };
+  const navigateTo = (viewId) => {
+    setAttendancePrefill(null);
+    setView(viewId);
+    const path = viewId === "dashboard" ? "/" : `/${viewId}`;
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+  };
 
   // Jump straight into Attendance with a specific service+date pre-loaded (used by the Reports drill-down)
   const goToAttendanceFor = (service, date) => {
     setAttendancePrefill({ service, date });
     setView("attendance");
+    if (window.location.pathname !== "/attendance") window.history.pushState(null, "", "/attendance");
   };
+
+  // Keep the view in sync with browser Back/Forward
+  useEffect(() => {
+    const onPop = () => setView(viewFromPath());
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   const refreshMembers = useCallback(async () => {
     const [{ data: mems }, { data: mds }] = await Promise.all([
@@ -2719,6 +2738,13 @@ export default function App() {
   }, []);
 
   useEffect(() => { if (session) refreshMembers(); }, [session, refreshMembers]);
+
+  // If a refresh (or a stale/shared link) lands on a view this user can't access, send them to the dashboard
+  useEffect(() => {
+    if (!session) return;
+    const allowed = { dashboard: true, attendance: true, members: true, reports: true, departments: true, programs: isAdmin, finance: !isAdmin || isOwner, staff: isAdmin };
+    if (!allowed[view]) navigateTo("dashboard");
+  }, [session, view, isAdmin, isOwner]);
 
   if (publicRoute) return <PublicRouter route={publicRoute} />;
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-[#F7F3E9]"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>;
