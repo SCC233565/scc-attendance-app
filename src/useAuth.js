@@ -16,11 +16,12 @@ export function useAuth() {
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
+    (async () => {
+      const { data } = await supabase.auth.getSession();
       setSession(data.session);
-      if (data.session) loadProfile(data.session.user.id);
+      if (data.session) await loadProfile(data.session.user.id);
       setLoading(false);
-    });
+    })();
     const { data: sub } = supabase.auth.onAuthStateChange((_event, sess) => {
       setSession(sess);
       if (sess) loadProfile(sess.user.id);
