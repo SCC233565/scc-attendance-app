@@ -121,6 +121,9 @@ function RegisterPage({ token }) {
           </div>
           <CopyButton text={result.code} />
           <p className="text-xs text-gray-500 mt-4">Please screenshot or write it down. {result.pin_set ? "You can also log in any time with your phone number and PIN to see it again." : "To see it again later, activate your profile with your phone number, this code and a PIN."}</p>
+          {result.whatsapp_link && (
+            <a href={result.whatsapp_link} target="_blank" rel="noopener noreferrer" className={btnCls + " mt-4"}>Join our WhatsApp community</a>
+          )}
           <a href="/me" className="inline-block mt-3 text-sm text-[#4A0E52] underline">Open my profile</a>
         </div>
       </PublicShell>

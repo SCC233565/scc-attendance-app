@@ -239,6 +239,7 @@ function ProgramModal({ program, types, onClose, onSaved }) {
     name: program?.name || "", description: program?.description || "",
     program_date: program?.program_date || new Date().toISOString().slice(0, 10),
     section: program?.section || "special", attendance_type: program?.attendance_type || "",
+    whatsapp_link: program?.whatsapp_link || "",
   });
   const [fields, setFields] = useState(initialFields);
   const [saving, setSaving] = useState(false);
@@ -256,9 +257,12 @@ function ProgramModal({ program, types, onClose, onSaved }) {
       return out;
     });
     if (cleaned.some((f) => f.type === "select" && !f.options.length)) return setErr("Add at least one choice to each 'Choice' question.");
+    const wa = d.whatsapp_link.trim();
+    if (wa && !/^https:\/\/chat\.whatsapp\.com\/\S+$/i.test(wa)) return setErr("WhatsApp link should look like https://chat.whatsapp.com/...");
     const payload = {
       name: d.name.trim(), description: d.description.trim() || null, program_date: d.program_date,
       attendance_type: d.section === "church" ? d.attendance_type : null,
+      whatsapp_link: wa || null,
       form_fields: [FULL_NAME_FIELD, PHONE_FIELD, ...cleaned]
     };
     setSaving(true);
@@ -286,6 +290,9 @@ function ProgramModal({ program, types, onClose, onSaved }) {
           </select>
         </Labeled>
       </div>
+      <Labeled label="WhatsApp group link (optional)">
+        <input className={inputCls} value={d.whatsapp_link} onChange={(e) => setD({ ...d, whatsapp_link: e.target.value })} placeholder="https://chat.whatsapp.com/..." />
+      </Labeled>
       {d.section === "church" && (
         <Labeled label="Counts under attendance type">
           <select className={inputCls} value={d.attendance_type} onChange={(e) => setD({ ...d, attendance_type: e.target.value })}>
