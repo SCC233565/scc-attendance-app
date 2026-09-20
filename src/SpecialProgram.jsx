@@ -104,7 +104,11 @@ const PRESET_FIELDS = [
   { key: "gender", label: "Gender", type: "select", optionsText: "Male, Female" },
   { key: "address", label: "Address", type: "text" },
   { key: "date_of_birth", label: "Date of birth", type: "date" },
-  { key: "occupation", label: "Occupation", type: "text" }
+  { key: "occupation", label: "Occupation", type: "text" },
+  {
+    key: "volunteer_roles", label: "Would you like to serve as a volunteer?", type: "checkbox",
+    optionsText: "Ushering, Media, Choir, Protocol, Children's Church, Technical, Photography, Content creator, Welcome team, Prayer and Intercessory, Sanitation, Sanctuary Keeper, Publicity, Logistics and Transportation"
+  }
 ];
 
 function AttendanceTypesManager({ types, reload }) {
@@ -212,11 +216,11 @@ function FieldsEditor({ fields, onChange }) {
           <div key={f.key} className="border border-[#E9E2CC] rounded-md p-2 flex flex-wrap gap-2 items-center">
             <input className={inputCls + " flex-1 min-w-[140px]"} value={f.label} onChange={(e) => patch(i, { label: e.target.value })} />
             <select className={inputCls + " w-28"} value={f.type} onChange={(e) => patch(i, { type: e.target.value })} disabled={["gender", "date_of_birth"].includes(f.key)}>
-              <option value="text">Text</option><option value="select">Choice</option><option value="date">Date</option>
+              <option value="text">Text</option><option value="select">Choice (pick one)</option><option value="checkbox">Tick boxes (pick many)</option><option value="date">Date</option>
             </select>
             <label className="text-xs text-gray-500 flex items-center gap-1"><input type="checkbox" checked={!!f.required} onChange={(e) => patch(i, { required: e.target.checked })} /> Required</label>
             <button onClick={() => remove(i)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
-            {f.type === "select" && <input className={inputCls} placeholder="Choices, separated by commas" value={f.optionsText || ""} onChange={(e) => patch(i, { optionsText: e.target.value })} />}
+            {(f.type === "select" || f.type === "checkbox") && <input className={inputCls} placeholder="Choices, separated by commas" value={f.optionsText || ""} onChange={(e) => patch(i, { optionsText: e.target.value })} />}
           </div>
         ))}
       </div>
@@ -253,10 +257,10 @@ function ProgramModal({ program, types, onClose, onSaved }) {
     const cleaned = fields.map((f) => {
       const { optionsText, ...rest } = f;
       const out = { ...rest, label: (f.label || "").trim() || "Question" };
-      if (f.type === "select") out.options = (optionsText || "").split(",").map((s) => s.trim()).filter(Boolean);
+      if (f.type === "select" || f.type === "checkbox") out.options = (optionsText || "").split(",").map((s) => s.trim()).filter(Boolean);
       return out;
     });
-    if (cleaned.some((f) => f.type === "select" && !f.options.length)) return setErr("Add at least one choice to each 'Choice' question.");
+    if (cleaned.some((f) => (f.type === "select" || f.type === "checkbox") && !f.options.length)) return setErr("Add at least one choice to each 'Choice' or 'Tick boxes' question.");
     const wa = d.whatsapp_link.trim();
     if (wa && !/^https:\/\/chat\.whatsapp\.com\/\S+$/i.test(wa)) return setErr("WhatsApp link should look like https://chat.whatsapp.com/...");
     const payload = {
