@@ -519,7 +519,7 @@ function Shell({ view, setView, isAdmin, isOwner, signOut, members, onSelectMemb
     { id: "members", label: "Members", icon: Users },
     { id: "reports", label: "Reports", icon: BarChart3 },
     { id: "departments", label: "Depts", icon: BookOpen },
-    ...(!isAdmin || isOwner ? [{ id: "finance", label: "Finance", icon: DollarSign }] : []),
+    { id: "finance", label: "Finance", icon: DollarSign },
     ...(isAdmin ? [{ id: "programs", label: "Programs", icon: QrCode }] : []),
     ...(isAdmin ? [{ id: "staff", label: "Secretariat", icon: UserCog }] : [])
   ];
@@ -2742,7 +2742,7 @@ export default function App() {
   // If a refresh (or a stale/shared link) lands on a view this user can't access, send them to the dashboard
   useEffect(() => {
     if (!session) return;
-    const allowed = { dashboard: true, attendance: true, members: true, reports: true, departments: true, programs: isAdmin, finance: !isAdmin || isOwner, staff: isAdmin };
+    const allowed = { dashboard: true, attendance: true, members: true, reports: true, departments: true, programs: isAdmin, finance: true, staff: isAdmin };
     if (!allowed[view]) navigateTo("dashboard");
   }, [session, view, isAdmin, isOwner]);
 
@@ -2759,7 +2759,7 @@ export default function App() {
       {view === "reports" && (section === "church" ? <ReportsView members={members} onEditAttendance={goToAttendanceFor} /> : <SpecialReportsPanel />)}
       {view === "departments" && (section === "church" ? <DepartmentsView members={members} refresh={refreshMembers} isAdmin={isAdmin} /> : <SpecialDepartmentsPanel isAdmin={isAdmin} />)}
       {view === "programs" && isAdmin && <ProgramsView onTypesChanged={refreshTypes} />}
-      {view === "finance" && (!isAdmin || isOwner) && <FinanceView isOwner={isOwner} />}
+      {view === "finance" && <FinanceView isOwner={isOwner} />}
       {view === "staff" && isAdmin && <StaffView isOwner={isOwner} />}
       {globalSelectedMember && (
         <MemberProfileModal
