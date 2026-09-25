@@ -436,6 +436,9 @@ function ProgramAttendeesTable({ program, onClose }) {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [busyDept, setBusyDept] = useState(null);
+  const [memberModal, setMemberModal] = useState(null);
+  const [newDeptName, setNewDeptName] = useState("");
+  const [addingDept, setAddingDept] = useState(false);
 
   const checkboxField = useMemo(() => (program.form_fields || []).find((f) => f.type === "checkbox"), [program]);
   const fields = useMemo(() => (program.form_fields || []).filter((f) => f.key !== "full_name" && f.key !== "phone"), [program]);
@@ -480,6 +483,17 @@ function ProgramAttendeesTable({ program, onClose }) {
     return m.extra?.[f.label] ?? m.extra?.[f.key] ?? "";
   };
 
+  const addDepartment = async () => {
+    const name = newDeptName.trim();
+    if (!name) return;
+    setAddingDept(true);
+    const { error } = await supabase.from("sp_departments").insert({ name });
+    setAddingDept(false);
+    if (error) return alert(error.code === "23505" ? "That department already exists." : error.message);
+    setNewDeptName("");
+    load();
+  };
+
   const toggleDept = async (memberId, deptId) => {
     const key = `${memberId}:${deptId}`;
     setBusyDept(key);
@@ -511,14 +525,19 @@ function ProgramAttendeesTable({ program, onClose }) {
           <p className="text-xs text-gray-400">{filtered.length} of {members.length} registered</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => setMemberModal({})} className={primaryBtn + " text-xs"}><Plus className="w-4 h-4" /> Add member</button>
           <button onClick={exportCsv} className={ghostBtn + " text-xs"}><Download className="w-4 h-4" /> CSV</button>
           <button onClick={onClose} className="text-gray-400 hover:text-[#4A0E52]"><X className="w-5 h-5" /></button>
         </div>
       </div>
-      <div className="px-4 py-2 border-b border-[#E9E2CC]">
-        <div className="relative max-w-sm">
+      <div className="px-4 py-2 border-b border-[#E9E2CC] flex flex-wrap items-center gap-2">
+        <div className="relative max-w-sm flex-1 min-w-[180px]">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
           <input className={inputCls + " pl-9"} placeholder="Search name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <input className={inputCls + " w-44"} placeholder="New department name" value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addDepartment()} />
+          <button onClick={addDepartment} disabled={!newDeptName.trim() || addingDept} className={ghostBtn + " text-xs"}>{addingDept ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add dept</button>
         </div>
       </div>
       {loading ? (
@@ -566,6 +585,18 @@ function ProgramAttendeesTable({ program, onClose }) {
           </table>
         </div>
       )}
+      {memberModal && (
+        <SpMemberModal
+          member={memberModal.id ? memberModal : null}
+          depts={depts}
+          links={links}
+          code={null}
+          isAdmin={true}
+          programId={program.id}
+          onClose={() => setMemberModal(null)}
+          onSaved={() => { setMemberModal(null); load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -589,7 +620,7 @@ function useSpecialData() {
   return { ...state, reload: load };
 }
 
-function SpMemberModal({ member, depts, links, code, isAdmin, onClose, onSaved }) {
+function SpMemberModal({ member, depts, links, code, isAdmin, programId, onClose, onSaved }) {
   const editing = !!member?.id;
   const [d, setD] = useState({
     full_name: member?.full_name || "", phone: member?.phone || "", email: member?.email || "",
@@ -618,7 +649,7 @@ function SpMemberModal({ member, depts, links, code, isAdmin, onClose, onSaved }
       ({ error } = await supabase.from("sp_members").update(payload).eq("id", id));
     } else {
       const { data: u } = await supabase.auth.getUser();
-      const res = await supabase.from("sp_members").insert({ ...payload, created_by: u?.user?.id || null }).select("id").single();
+      const res = await supabase.from("sp_members").insert({ ...payload, created_by: u?.user?.id || null, source_program_id: programId || null }).select("id").single();
       error = res.error; id = res.data?.id;
     }
     if (error) {
