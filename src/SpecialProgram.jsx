@@ -322,6 +322,7 @@ export function ProgramsView({ onTypesChanged }) {
   const [modal, setModal] = useState(null); // {} for new, program for edit
   const [open, setOpen] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [attendeesFor, setAttendeesFor] = useState(null);
 
   const load = useCallback(async () => {
     const [t, p] = await Promise.all([
@@ -395,6 +396,7 @@ export function ProgramsView({ onTypesChanged }) {
                 <p className="text-xs text-gray-400">{fmtDate(p.program_date)} · {p.section === "special" ? "Special Program" : `Church · ${p.attendance_type || "no type"}`}</p>
               </div>
               <button onClick={() => setOpen(open === p.id ? null : p.id)} className={ghostBtn + " text-xs"}><QrCode className="w-4 h-4" /> Forms and QR codes</button>
+              {p.section === "special" && <button onClick={() => setAttendeesFor(p)} className={ghostBtn + " text-xs"}><Users className="w-4 h-4" /> Attendees</button>}
               <button onClick={() => setModal(p)} className="text-gray-400 hover:text-[#4A0E52]" title="Edit"><Pencil className="w-4 h-4" /></button>
               <button onClick={() => del(p)} className="text-gray-400 hover:text-red-600" title="Delete"><Trash2 className="w-4 h-4" /></button>
             </div>
@@ -416,6 +418,154 @@ export function ProgramsView({ onTypesChanged }) {
       </div>
 
       {modal && <ProgramModal program={modal.id ? modal : null} types={types} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} />}
+      {attendeesFor && <ProgramAttendeesTable program={attendeesFor} onClose={() => setAttendeesFor(null)} />}
+    </div>
+  );
+}
+
+/* ============================================================
+   PROGRAM — per-program attendee table (registrants + form answers + department assignment)
+   ============================================================ */
+const SP_COLUMN_KEYS = ["email", "address", "gender", "date_of_birth", "occupation"];
+
+function ProgramAttendeesTable({ program, onClose }) {
+  const [members, setMembers] = useState([]);
+  const [depts, setDepts] = useState([]);
+  const [links, setLinks] = useState([]);
+  const [codes, setCodes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [busyDept, setBusyDept] = useState(null);
+
+  const checkboxField = useMemo(() => (program.form_fields || []).find((f) => f.type === "checkbox"), [program]);
+  const fields = useMemo(() => (program.form_fields || []).filter((f) => f.key !== "full_name" && f.key !== "phone"), [program]);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data: m } = await supabase.from("sp_members").select("*").eq("source_program_id", program.id).order("created_at", { ascending: false });
+    const ids = (m || []).map((x) => x.id);
+    const [{ data: d }, { data: l }, { data: c }] = await Promise.all([
+      supabase.from("sp_departments").select("*").order("name"),
+      ids.length ? supabase.from("sp_member_departments").select("*").in("sp_member_id", ids) : Promise.resolve({ data: [] }),
+      ids.length ? supabase.from("member_codes").select("code, sp_member_id").eq("section", "special").in("sp_member_id", ids) : Promise.resolve({ data: [] })
+    ]);
+    // Keep the assignable Department list in sync with this program's volunteer tick-box choices
+    let allDepts = d || [];
+    if (checkboxField?.options?.length) {
+      const existingNames = new Set(allDepts.map((x) => x.name));
+      const missing = checkboxField.options.filter((o) => !existingNames.has(o));
+      if (missing.length) {
+        const { data: inserted } = await supabase.from("sp_departments").insert(missing.map((name) => ({ name }))).select("*");
+        allDepts = [...allDepts, ...(inserted || [])].sort((a, b) => a.name.localeCompare(b.name));
+      }
+    }
+    setDepts(allDepts);
+    setMembers(m || []);
+    setLinks(l || []);
+    setCodes(c || []);
+    setLoading(false);
+  }, [program.id, checkboxField]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const memberDeptIds = useMemo(() => {
+    const map = new Map();
+    links.forEach((l) => { if (!map.has(l.sp_member_id)) map.set(l.sp_member_id, []); map.get(l.sp_member_id).push(l.sp_department_id); });
+    return map;
+  }, [links]);
+  const codeOf = useMemo(() => new Map(codes.map((c) => [c.sp_member_id, c.code])), [codes]);
+
+  const cellValue = (m, f) => {
+    if (SP_COLUMN_KEYS.includes(f.key)) return f.key === "date_of_birth" ? fmtDate(m.date_of_birth) : (m[f.key] || "");
+    return m.extra?.[f.label] ?? m.extra?.[f.key] ?? "";
+  };
+
+  const toggleDept = async (memberId, deptId) => {
+    const key = `${memberId}:${deptId}`;
+    setBusyDept(key);
+    const has = (memberDeptIds.get(memberId) || []).includes(deptId);
+    if (has) await supabase.from("sp_member_departments").delete().eq("sp_member_id", memberId).eq("sp_department_id", deptId);
+    else await supabase.from("sp_member_departments").insert({ sp_member_id: memberId, sp_department_id: deptId });
+    await load();
+    setBusyDept(null);
+  };
+
+  const filtered = members.filter((m) => {
+    const q = search.toLowerCase();
+    return !q || m.full_name.toLowerCase().includes(q) || (m.phone || "").includes(q);
+  });
+
+  const exportCsv = () => downloadCsv(`${program.name.replace(/\s+/g, "-").toLowerCase()}-attendees.csv`, filtered.map((m) => {
+    const row = { Name: m.full_name, Phone: m.phone || "" };
+    fields.forEach((f) => { row[f.label || f.key] = cellValue(m, f); });
+    row.Departments = (memberDeptIds.get(m.id) || []).map((id) => depts.find((d) => d.id === id)?.name).filter(Boolean).join("; ");
+    row.Code = codeOf.get(m.id) || "";
+    return row;
+  }));
+
+  return (
+    <div className="fixed inset-0 bg-white z-50 flex flex-col">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E9E2CC] gap-2">
+        <div className="min-w-0">
+          <h2 className="font-display text-lg text-[#4A0E52] truncate">{program.name} — Attendees</h2>
+          <p className="text-xs text-gray-400">{filtered.length} of {members.length} registered</p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={exportCsv} className={ghostBtn + " text-xs"}><Download className="w-4 h-4" /> CSV</button>
+          <button onClick={onClose} className="text-gray-400 hover:text-[#4A0E52]"><X className="w-5 h-5" /></button>
+        </div>
+      </div>
+      <div className="px-4 py-2 border-b border-[#E9E2CC]">
+        <div className="relative max-w-sm">
+          <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+          <input className={inputCls + " pl-9"} placeholder="Search name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        </div>
+      </div>
+      {loading ? (
+        <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>
+      ) : filtered.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center text-sm text-gray-400">No registrants yet.</div>
+      ) : (
+        <div className="flex-1 overflow-auto">
+          <table className="min-w-full text-sm">
+            <thead className="bg-[#F7F3E9] sticky top-0">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Name</th>
+                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Phone</th>
+                {fields.map((f) => <th key={f.key} className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">{f.label || f.key}</th>)}
+                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Departments</th>
+                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Code</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#F0EAD6]">
+              {filtered.map((m) => (
+                <tr key={m.id} className="align-top">
+                  <td className="px-3 py-2 whitespace-nowrap font-medium">{m.full_name}</td>
+                  <td className="px-3 py-2 whitespace-nowrap text-gray-600">{m.phone || ""}</td>
+                  {fields.map((f) => <td key={f.key} className="px-3 py-2 text-gray-600 max-w-[220px]">{cellValue(m, f)}</td>)}
+                  <td className="px-3 py-2 min-w-[200px]">
+                    {depts.length === 0 ? <span className="text-xs text-gray-300">—</span> : (
+                      <div className="flex flex-wrap gap-1">
+                        {depts.map((d) => {
+                          const active = (memberDeptIds.get(m.id) || []).includes(d.id);
+                          const key = `${m.id}:${d.id}`;
+                          return (
+                            <button key={d.id} disabled={busyDept === key} onClick={() => toggleDept(m.id, d.id)}
+                              className={`text-[11px] px-2 py-0.5 rounded-full border ${active ? "bg-[#4A0E52] text-white border-[#4A0E52]" : "bg-white border-[#E9E2CC] text-gray-500"}`}>
+                              {d.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-500">{codeOf.get(m.id) || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
