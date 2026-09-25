@@ -2409,6 +2409,12 @@ function BackupExport() {
     setExporting(false);
     setDone(true);
     setTimeout(() => setDone(false), 3000);
+    const { data: u } = await supabase.auth.getUser();
+    supabase.from("activity_log").insert({
+      event_type: "report_download",
+      actor_email: u?.user?.email || "Unknown",
+      detail: `Full backup (${backup.counts.members} members, ${backup.counts.attendance_records} attendance records, ${backup.counts.departments} departments)`,
+    });
   };
 
   return (
