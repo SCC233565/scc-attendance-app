@@ -6,6 +6,7 @@ import {
 import QRCode from "qrcode";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 /* ============================================================
    Special Program — fully separate from church members/departments/attendance.
@@ -443,6 +444,18 @@ function ProgramAttendeesTable({ program, onClose }) {
   const [openDept, setOpenDept] = useState(null);
   const [assignId, setAssignId] = useState("");
 
+  // Attendance tab (batch style, like church)
+  const [attendance, setAttendance] = useState([]);
+  const [present, setPresent] = useState({});
+  const [originalPresent, setOriginalPresent] = useState({});
+  const [attSearch, setAttSearch] = useState("");
+  const [savingAtt, setSavingAtt] = useState(false);
+  const [savedAtt, setSavedAtt] = useState(false);
+
+  // Reports tab (this program's numbers + cross-program comparison)
+  const [allStats, setAllStats] = useState([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+
   const checkboxField = useMemo(() => (program.form_fields || []).find((f) => f.type === "checkbox"), [program]);
   const fields = useMemo(() => (program.form_fields || []).filter((f) => f.key !== "full_name" && f.key !== "phone"), [program]);
 
@@ -450,11 +463,17 @@ function ProgramAttendeesTable({ program, onClose }) {
     setLoading(true);
     const { data: m } = await supabase.from("sp_members").select("*").eq("source_program_id", program.id).order("created_at", { ascending: false });
     const ids = (m || []).map((x) => x.id);
-    const [{ data: d }, { data: l }, { data: c }] = await Promise.all([
+    const [{ data: d }, { data: l }, { data: c }, { data: att }] = await Promise.all([
       supabase.from("sp_departments").select("*").eq("program_id", program.id).order("name"),
       ids.length ? supabase.from("sp_member_departments").select("*").in("sp_member_id", ids) : Promise.resolve({ data: [] }),
-      ids.length ? supabase.from("member_codes").select("code, sp_member_id").eq("section", "special").in("sp_member_id", ids) : Promise.resolve({ data: [] })
+      ids.length ? supabase.from("member_codes").select("code, sp_member_id").eq("section", "special").in("sp_member_id", ids) : Promise.resolve({ data: [] }),
+      supabase.from("sp_attendance").select("sp_member_id").eq("program_id", program.id)
     ]);
+    const attMap = {};
+    (att || []).forEach((r) => { attMap[r.sp_member_id] = true; });
+    setPresent(attMap);
+    setOriginalPresent(attMap);
+    setAttendance(att || []);
     // Keep this program's Department list in sync with its own volunteer tick-box choices
     let allDepts = d || [];
     if (checkboxField?.options?.length) {
@@ -511,6 +530,57 @@ function ProgramAttendeesTable({ program, onClose }) {
     load();
   };
 
+  const attFiltered = members.filter((m) => {
+    const q = attSearch.toLowerCase();
+    return !q || m.full_name.toLowerCase().includes(q) || (m.phone || "").includes(q);
+  });
+  const togglePresent = (id) => setPresent((p) => ({ ...p, [id]: !p[id] }));
+  const selectAllPresent = () => { const map = {}; attFiltered.forEach((m) => { map[m.id] = true; }); setPresent((p) => ({ ...p, ...map })); };
+  const clearAllPresent = () => { const map = {}; attFiltered.forEach((m) => { map[m.id] = false; }); setPresent((p) => ({ ...p, ...map })); };
+
+  const saveAttendance = async () => {
+    setSavingAtt(true);
+    const { data: u } = await supabase.auth.getUser();
+    const toAdd = Object.entries(present).filter(([, v]) => v).map(([sp_member_id]) => ({ program_id: program.id, sp_member_id, method: "manual", marked_by: u?.user?.id || null }));
+    const toRemove = Object.keys(originalPresent).filter((id) => originalPresent[id] && !present[id]);
+    if (toAdd.length) {
+      const { error } = await supabase.from("sp_attendance").upsert(toAdd, { onConflict: "program_id,sp_member_id" });
+      if (error) { setSavingAtt(false); return alert("Could not save attendance: " + error.message); }
+    }
+    if (toRemove.length) {
+      const { error } = await supabase.from("sp_attendance").delete().eq("program_id", program.id).in("sp_member_id", toRemove);
+      if (error) { setSavingAtt(false); return alert("Could not update attendance: " + error.message); }
+    }
+    await load();
+    setSavingAtt(false);
+    setSavedAtt(true);
+    setTimeout(() => setSavedAtt(false), 2500);
+  };
+
+  const loadReports = useCallback(async () => {
+    setReportsLoading(true);
+    const [{ data: progs }, { data: allMembers }, { data: allAtt }] = await Promise.all([
+      supabase.from("programs").select("id, name, program_date").eq("section", "special").order("program_date", { ascending: true }),
+      supabase.from("sp_members").select("id, source_program_id"),
+      supabase.from("sp_attendance").select("program_id")
+    ]);
+    const regCount = {};
+    (allMembers || []).forEach((m) => { if (m.source_program_id) regCount[m.source_program_id] = (regCount[m.source_program_id] || 0) + 1; });
+    const presCount = {};
+    (allAtt || []).forEach((a) => { presCount[a.program_id] = (presCount[a.program_id] || 0) + 1; });
+    const stats = (progs || []).map((p) => ({
+      name: p.name.length > 14 ? p.name.slice(0, 13) + "…" : p.name,
+      fullName: p.name,
+      Registered: regCount[p.id] || 0,
+      Present: presCount[p.id] || 0,
+      isCurrent: p.id === program.id
+    })).slice(-12);
+    setAllStats(stats);
+    setReportsLoading(false);
+  }, [program.id]);
+
+  useEffect(() => { if (tab === "reports") loadReports(); }, [tab, loadReports]);
+
   const toggleDept = async (memberId, deptId) => {
     const key = `${memberId}:${deptId}`;
     setBusyDept(key);
@@ -551,9 +621,11 @@ function ProgramAttendeesTable({ program, onClose }) {
       <div className="flex border-b border-[#E9E2CC] px-4 gap-1">
         <button onClick={() => setTab("members")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "members" ? "border-[#4A0E52] text-[#4A0E52] font-medium" : "border-transparent text-gray-400"}`}>Members</button>
         <button onClick={() => setTab("departments")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "departments" ? "border-[#4A0E52] text-[#4A0E52] font-medium" : "border-transparent text-gray-400"}`}>Departments ({depts.length})</button>
+        <button onClick={() => setTab("attendance")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "attendance" ? "border-[#4A0E52] text-[#4A0E52] font-medium" : "border-transparent text-gray-400"}`}>Attendance</button>
+        <button onClick={() => setTab("reports")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "reports" ? "border-[#4A0E52] text-[#4A0E52] font-medium" : "border-transparent text-gray-400"}`}>Reports</button>
       </div>
 
-      {tab === "members" ? (
+      {tab === "members" && (
         <>
           <div className="px-4 py-2 border-b border-[#E9E2CC]">
             <div className="relative max-w-sm">
@@ -590,7 +662,9 @@ function ProgramAttendeesTable({ program, onClose }) {
             </div>
           )}
         </>
-      ) : (
+      )}
+
+      {tab === "departments" && (
         <div className="flex-1 overflow-auto p-4">
           <div className="flex gap-2 mb-4 max-w-md">
             <input className={inputCls} placeholder="New department name" value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addDepartment()} />
@@ -636,6 +710,77 @@ function ProgramAttendeesTable({ program, onClose }) {
                   </div>
                 );
               })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab === "attendance" && (
+        <>
+          <div className="px-4 py-2 border-b border-[#E9E2CC] flex flex-wrap items-center gap-2">
+            <div className="relative flex-1 min-w-[180px] max-w-sm">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+              <input className={inputCls + " pl-9"} placeholder="Search name or phone…" value={attSearch} onChange={(e) => setAttSearch(e.target.value)} />
+            </div>
+            <button onClick={selectAllPresent} className={ghostBtn + " text-xs"}>Select all</button>
+            <button onClick={clearAllPresent} className={ghostBtn + " text-xs"}>Clear all</button>
+            <button onClick={saveAttendance} disabled={savingAtt} className={primaryBtn + " text-xs ml-auto"}>
+              {savingAtt ? <Loader2 className="w-4 h-4 animate-spin" /> : savedAtt ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+              {savedAtt ? "Saved" : "Save attendance"}
+            </button>
+          </div>
+          <div className="px-4 py-2 text-xs text-gray-500 border-b border-[#F0EAD6]">
+            {attFiltered.filter((m) => present[m.id]).length} present of {attFiltered.length}
+          </div>
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>
+          ) : attFiltered.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">No registrants yet.</div>
+          ) : (
+            <div className="flex-1 overflow-auto">
+              <div className={card + " divide-y divide-[#F0EAD6] m-4"}>
+                {attFiltered.map((m) => (
+                  <div key={m.id} onClick={() => togglePresent(m.id)} className={`px-4 py-3 flex items-center gap-3 cursor-pointer ${present[m.id] ? "bg-[#F1F8F1]" : "hover:bg-[#FBF9F1]"}`}>
+                    <div className={`w-5 h-5 rounded border flex items-center justify-center ${present[m.id] ? "bg-green-600 border-green-600 text-white" : "border-gray-300"}`}>
+                      {present[m.id] ? <Check className="w-3.5 h-3.5" /> : null}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm truncate">{m.full_name}</p>
+                      <p className="text-xs text-gray-400 truncate">{m.phone || ""}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {tab === "reports" && (
+        <div className="flex-1 overflow-auto p-4">
+          <div className="grid grid-cols-3 gap-3 mb-6 max-w-lg">
+            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{members.length}</p><p className="text-[11px] text-gray-400">Registered</p></div>
+            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{attendance.length}</p><p className="text-[11px] text-gray-400">Present</p></div>
+            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{members.length ? Math.round((attendance.length / members.length) * 100) : 0}%</p><p className="text-[11px] text-gray-400">Turnout</p></div>
+          </div>
+          <h3 className="text-sm font-medium text-[#4A0E52] mb-2">Compared to other Special Programs</h3>
+          {reportsLoading ? (
+            <div className="py-10 flex justify-center"><Loader2 className="w-5 h-5 animate-spin text-[#4A0E52]" /></div>
+          ) : allStats.length === 0 ? (
+            <p className="text-sm text-gray-400 py-8 text-center">Not enough data yet.</p>
+          ) : (
+            <div className={card + " p-3"} style={{ height: 280 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={allStats}>
+                  <CartesianGrid stroke="#F1ECDE" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip labelFormatter={(_, p) => p?.[0]?.payload?.fullName || ""} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Registered" fill="#C9A227" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Present" fill="#4A0E52" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
         </div>
