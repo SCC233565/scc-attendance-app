@@ -593,8 +593,34 @@ function ProgramAttendeesTable({ program, onClose }) {
       }
     }
     setDepts(allDepts);
+
+    // Backfill: link members whose volunteer tick-box answers were saved before
+    // auto-assignment existed (or who were imported/edited outside registration).
+    let allLinks = l || [];
+    if (checkboxField && allDepts.length && (m || []).length) {
+      const deptIdByName = new Map(allDepts.map((x) => [x.name, x.id]));
+      const linkedSet = new Set(allLinks.map((x) => `${x.sp_member_id}:${x.sp_department_id}`));
+      const toInsert = [];
+      (m || []).forEach((mem) => {
+        const raw = mem.extra?.[checkboxField.label] ?? mem.extra?.[checkboxField.key];
+        const chosen = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+        chosen.forEach((name) => {
+          const deptId = deptIdByName.get(name);
+          if (!deptId) return; // answer doesn't match a current department name
+          const key = `${mem.id}:${deptId}`;
+          if (linkedSet.has(key)) return;
+          linkedSet.add(key); // guard against duplicate answers in the same pass
+          toInsert.push({ sp_member_id: mem.id, sp_department_id: deptId });
+        });
+      });
+      if (toInsert.length) {
+        const { data: inserted } = await supabase.from("sp_member_departments").insert(toInsert).select("*");
+        allLinks = [...allLinks, ...(inserted || [])];
+      }
+    }
+
     setMembers(m || []);
-    setLinks(l || []);
+    setLinks(allLinks);
     setCodes(c || []);
     setLoading(false);
   }, [program.id, program.program_date, checkboxField]);
