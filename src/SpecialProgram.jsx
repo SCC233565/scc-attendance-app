@@ -20,6 +20,7 @@ const ghostBtn = "border border-[#E9E2CC] rounded-md px-3 py-2 text-sm bg-white 
 
 const origin = () => window.location.origin;
 const fmtDate = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+const todayStr = () => new Date().toLocaleDateString("en-CA");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 function downloadCsv(filename, rows) {
@@ -64,6 +65,12 @@ export function SectionToggle({ section, setSection }) {
 export async function loadAttendanceTypes() {
   const { data, error } = await supabase.from("attendance_types").select("*").order("sort_order").order("created_at");
   return error ? null : data;
+}
+
+/* ---------- Calendar loader: the session dates set up for a program ---------- */
+export async function loadProgramSessions(programId) {
+  const { data, error } = await supabase.from("program_sessions").select("*").eq("program_id", programId).order("session_date");
+  return error ? [] : (data || []);
 }
 
 /* ---------- Church member code row (shown in the church member profile) ---------- */
@@ -200,6 +207,92 @@ function QrCard({ title, url, program, hint }) {
         <button onClick={save} disabled={!src} className={ghostBtn + " text-xs"}><Download className="w-3.5 h-3.5" /> PNG</button>
         <button onClick={print} disabled={!src} className={ghostBtn + " text-xs"}><Printer className="w-3.5 h-3.5" /> Print</button>
       </div>
+    </div>
+  );
+}
+
+/* ---------- Calendar (multi-day) manager for a Special Program ----------
+   Each date on the calendar gets its own attendance QR (program_sessions.attendance_token),
+   only active on its own session_date. Registration stays program-wide. */
+function SessionCalendarManager({ program }) {
+  const [sessions, setSessions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [counts, setCounts] = useState({});
+  const [newDate, setNewDate] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [qrFor, setQrFor] = useState(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [s, a] = await Promise.all([
+      loadProgramSessions(program.id),
+      supabase.from("sp_attendance").select("attendance_date").eq("program_id", program.id)
+    ]);
+    const c = {};
+    (a.data || []).forEach((r) => { c[r.attendance_date] = (c[r.attendance_date] || 0) + 1; });
+    setCounts(c);
+    setSessions(s);
+    setLoading(false);
+  }, [program.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!newDate) return;
+    setBusy(true); setErr("");
+    const { error } = await supabase.from("program_sessions").insert({ program_id: program.id, session_date: newDate, label: newLabel.trim() || null });
+    setBusy(false);
+    if (error) return setErr(error.code === "23505" ? "That date is already on the calendar." : error.message);
+    setNewDate(""); setNewLabel(""); load();
+  };
+  const toggleOpen = async (s) => {
+    const { error } = await supabase.from("program_sessions").update({ attendance_open: !s.attendance_open }).eq("id", s.id);
+    if (error) return alert(error.message);
+    load();
+  };
+  const remove = async (s) => {
+    if (counts[s.session_date]) return alert("This date already has attendance recorded, so it can't be removed.");
+    if (!window.confirm(`Remove ${fmtDate(s.session_date)}${s.label ? ` (${s.label})` : ""} from the calendar?`)) return;
+    const { error } = await supabase.from("program_sessions").delete().eq("id", s.id);
+    if (error) return alert(error.message);
+    load();
+  };
+
+  if (loading) return <div className="py-4 flex justify-center"><Loader2 className="w-4 h-4 animate-spin text-[#4A0E52]" /></div>;
+
+  return (
+    <div>
+      <p className="text-xs text-gray-400 mb-2">Each date gets its own QR code. A day's QR only works on that exact date.</p>
+      {sessions.length === 0 && <p className="text-xs text-gray-400 mb-2">No dates yet — add the first one below.</p>}
+      <ul className="divide-y divide-[#F0EAD6] mb-3">
+        {sessions.map((s) => (
+          <li key={s.id} className="py-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm flex-1 min-w-[140px]">{fmtDate(s.session_date)}{s.label ? ` — ${s.label}` : ""}</span>
+              <span className="text-xs text-gray-400">{counts[s.session_date] || 0} present</span>
+              <label className="text-xs text-gray-500 flex items-center gap-1">
+                <input type="checkbox" checked={s.attendance_open} onChange={() => toggleOpen(s)} /> Open
+              </label>
+              <button onClick={() => setQrFor(qrFor === s.id ? null : s.id)} className={ghostBtn + " text-xs"}><QrCode className="w-3.5 h-3.5" /> QR</button>
+              <button onClick={() => remove(s)} disabled={!!counts[s.session_date]} className="text-gray-400 hover:text-red-600 disabled:opacity-30" title={counts[s.session_date] ? "Has attendance — can't remove" : "Remove"}>
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+            {qrFor === s.id && (
+              <div className="mt-2 max-w-xs">
+                <QrCard title={fmtDate(s.session_date)} hint={s.label || "Scan and enter code"} url={`${origin()}/ad/${s.attendance_token}`} program={program} />
+              </div>
+            )}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap gap-2 items-end">
+        <Labeled label="Date"><input type="date" className={inputCls} value={newDate} onChange={(e) => setNewDate(e.target.value)} /></Labeled>
+        <Labeled label="Label (optional)"><input className={inputCls} placeholder="e.g. Day 1" value={newLabel} onChange={(e) => setNewLabel(e.target.value)} /></Labeled>
+        <button onClick={add} disabled={busy || !newDate} className={primaryBtn}><Plus className="w-4 h-4" /> Add date</button>
+      </div>
+      {err && <p className="text-xs text-red-600 mt-2">{err}</p>}
     </div>
   );
 }
@@ -411,7 +504,14 @@ export function ProgramsView({ onTypesChanged }) {
                   <label className="flex items-center gap-2"><input type="checkbox" checked={p.reg_open} onChange={() => setFlag(p, "reg_open")} /> Registration open</label>
                   <label className="flex items-center gap-2"><input type="checkbox" checked={p.attendance_open} onChange={() => setFlag(p, "attendance_open")} /> Attendance open</label>
                 </div>
-                <p className="text-[11px] text-gray-400 mt-2">The attendance link only accepts codes on the program date.</p>
+                <p className="text-[11px] text-gray-400 mt-2">The attendance link above only accepts codes on the program date. Use the Calendar below for a separate QR per day.</p>
+
+                {p.section === "special" && (
+                  <div className="mt-5 pt-4 border-t border-[#F0EAD6]">
+                    <h3 className="font-display text-base text-[#4A0E52] mb-2">Calendar</h3>
+                    <SessionCalendarManager program={p} />
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -444,8 +544,12 @@ function ProgramAttendeesTable({ program, onClose }) {
   const [openDept, setOpenDept] = useState(null);
   const [assignId, setAssignId] = useState("");
 
-  // Attendance tab (batch style, like church)
-  const [attendance, setAttendance] = useState([]);
+  // Calendar (multi-day) support
+  const [sessions, setSessions] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
+
+  // Attendance tab (batch style, like church) — day-scoped
+  const [attendance, setAttendance] = useState([]); // all-time rows for this program, used by the Reports tab summary
   const [present, setPresent] = useState({});
   const [originalPresent, setOriginalPresent] = useState({});
   const [attSearch, setAttSearch] = useState("");
@@ -463,17 +567,21 @@ function ProgramAttendeesTable({ program, onClose }) {
     setLoading(true);
     const { data: m } = await supabase.from("sp_members").select("*").eq("source_program_id", program.id).order("created_at", { ascending: false });
     const ids = (m || []).map((x) => x.id);
-    const [{ data: d }, { data: l }, { data: c }, { data: att }] = await Promise.all([
+    const [{ data: d }, { data: l }, { data: c }, { data: att }, s] = await Promise.all([
       supabase.from("sp_departments").select("*").eq("program_id", program.id).order("name"),
       ids.length ? supabase.from("sp_member_departments").select("*").in("sp_member_id", ids) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from("member_codes").select("code, sp_member_id").eq("section", "special").in("sp_member_id", ids) : Promise.resolve({ data: [] }),
-      supabase.from("sp_attendance").select("sp_member_id").eq("program_id", program.id)
+      supabase.from("sp_attendance").select("sp_member_id, attendance_date").eq("program_id", program.id),
+      loadProgramSessions(program.id)
     ]);
-    const attMap = {};
-    (att || []).forEach((r) => { attMap[r.sp_member_id] = true; });
-    setPresent(attMap);
-    setOriginalPresent(attMap);
     setAttendance(att || []);
+    setSessions(s);
+    setSelectedDate((prev) => {
+      if (prev && s.some((x) => x.session_date === prev)) return prev;
+      const today = todayStr();
+      const todaySession = s.find((x) => x.session_date === today);
+      return todaySession ? todaySession.session_date : (s[0]?.session_date || program.program_date || "");
+    });
     // Keep this program's Department list in sync with its own volunteer tick-box choices
     let allDepts = d || [];
     if (checkboxField?.options?.length) {
@@ -489,9 +597,19 @@ function ProgramAttendeesTable({ program, onClose }) {
     setLinks(l || []);
     setCodes(c || []);
     setLoading(false);
-  }, [program.id, checkboxField]);
+  }, [program.id, program.program_date, checkboxField]);
 
   useEffect(() => { load(); }, [load]);
+
+  const loadDay = useCallback(async (date) => {
+    if (!date) { setPresent({}); setOriginalPresent({}); return; }
+    const { data: att } = await supabase.from("sp_attendance").select("sp_member_id").eq("program_id", program.id).eq("attendance_date", date);
+    const attMap = {};
+    (att || []).forEach((r) => { attMap[r.sp_member_id] = true; });
+    setPresent(attMap);
+    setOriginalPresent(attMap);
+  }, [program.id]);
+  useEffect(() => { loadDay(selectedDate); }, [selectedDate, loadDay]);
 
   const memberDeptIds = useMemo(() => {
     const map = new Map();
@@ -539,19 +657,22 @@ function ProgramAttendeesTable({ program, onClose }) {
   const clearAllPresent = () => { const map = {}; attFiltered.forEach((m) => { map[m.id] = false; }); setPresent((p) => ({ ...p, ...map })); };
 
   const saveAttendance = async () => {
+    if (!selectedDate) return;
     setSavingAtt(true);
     const { data: u } = await supabase.auth.getUser();
-    const toAdd = Object.entries(present).filter(([, v]) => v).map(([sp_member_id]) => ({ program_id: program.id, sp_member_id, method: "manual", marked_by: u?.user?.id || null }));
+    const toAdd = Object.entries(present).filter(([, v]) => v).map(([sp_member_id]) => ({
+      program_id: program.id, sp_member_id, method: "manual", marked_by: u?.user?.id || null, attendance_date: selectedDate,
+    }));
     const toRemove = Object.keys(originalPresent).filter((id) => originalPresent[id] && !present[id]);
     if (toAdd.length) {
-      const { error } = await supabase.from("sp_attendance").upsert(toAdd, { onConflict: "program_id,sp_member_id" });
+      const { error } = await supabase.from("sp_attendance").upsert(toAdd, { onConflict: "program_id,sp_member_id,attendance_date" });
       if (error) { setSavingAtt(false); return alert("Could not save attendance: " + error.message); }
     }
     if (toRemove.length) {
-      const { error } = await supabase.from("sp_attendance").delete().eq("program_id", program.id).in("sp_member_id", toRemove);
+      const { error } = await supabase.from("sp_attendance").delete().eq("program_id", program.id).eq("attendance_date", selectedDate).in("sp_member_id", toRemove);
       if (error) { setSavingAtt(false); return alert("Could not update attendance: " + error.message); }
     }
-    await load();
+    await Promise.all([loadDay(selectedDate), load()]);
     setSavingAtt(false);
     setSavedAtt(true);
     setTimeout(() => setSavedAtt(false), 2500);
@@ -718,19 +839,26 @@ function ProgramAttendeesTable({ program, onClose }) {
       {tab === "attendance" && (
         <>
           <div className="px-4 py-2 border-b border-[#E9E2CC] flex flex-wrap items-center gap-2">
+            <select className={inputCls + " w-auto"} value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}>
+              {sessions.length === 0 && program.program_date && <option value={program.program_date}>{fmtDate(program.program_date)}</option>}
+              {sessions.map((s) => <option key={s.id} value={s.session_date}>{fmtDate(s.session_date)}{s.label ? ` — ${s.label}` : ""}</option>)}
+            </select>
             <div className="relative flex-1 min-w-[180px] max-w-sm">
               <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
               <input className={inputCls + " pl-9"} placeholder="Search name or phone…" value={attSearch} onChange={(e) => setAttSearch(e.target.value)} />
             </div>
             <button onClick={selectAllPresent} className={ghostBtn + " text-xs"}>Select all</button>
             <button onClick={clearAllPresent} className={ghostBtn + " text-xs"}>Clear all</button>
-            <button onClick={saveAttendance} disabled={savingAtt} className={primaryBtn + " text-xs ml-auto"}>
+            <button onClick={saveAttendance} disabled={savingAtt || !selectedDate} className={primaryBtn + " text-xs ml-auto"}>
               {savingAtt ? <Loader2 className="w-4 h-4 animate-spin" /> : savedAtt ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />}
               {savedAtt ? "Saved" : "Save attendance"}
             </button>
           </div>
+          {sessions.length === 0 && (
+            <p className="px-4 pt-2 text-xs text-amber-700">No calendar dates set up yet — add one from Programs → Calendar. Using the program's original date for now.</p>
+          )}
           <div className="px-4 py-2 text-xs text-gray-500 border-b border-[#F0EAD6]">
-            {attFiltered.filter((m) => present[m.id]).length} present of {attFiltered.length}
+            {attFiltered.filter((m) => present[m.id]).length} present of {attFiltered.length} {selectedDate ? `on ${fmtDate(selectedDate)}` : ""}
           </div>
           {loading ? (
             <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>
@@ -760,7 +888,7 @@ function ProgramAttendeesTable({ program, onClose }) {
         <div className="flex-1 overflow-auto p-4">
           <div className="grid grid-cols-3 gap-3 mb-6 max-w-lg">
             <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{members.length}</p><p className="text-[11px] text-gray-400">Registered</p></div>
-            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{attendance.length}</p><p className="text-[11px] text-gray-400">Present</p></div>
+            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{attendance.length}</p><p className="text-[11px] text-gray-400">Present (all days)</p></div>
             <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{members.length ? Math.round((attendance.length / members.length) * 100) : 0}%</p><p className="text-[11px] text-gray-400">Turnout</p></div>
           </div>
           <h3 className="text-sm font-medium text-[#4A0E52] mb-2">Compared to other Special Programs</h3>
@@ -1122,6 +1250,8 @@ export function SpecialDepartmentsPanel({ isAdmin }) {
 export function SpecialAttendancePanel() {
   const { members, programs, loading } = useSpecialData();
   const [programId, setProgramId] = useState("");
+  const [sessions, setSessions] = useState([]);
+  const [selectedDate, setSelectedDate] = useState("");
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState("");
   const [registeredHere, setRegisteredHere] = useState(false);
@@ -1129,15 +1259,31 @@ export function SpecialAttendancePanel() {
 
   useEffect(() => { if (!programId && programs.length) setProgramId(programs[0].id); }, [programs, programId]);
 
+  useEffect(() => {
+    if (!programId) { setSessions([]); return; }
+    (async () => {
+      const s = await loadProgramSessions(programId);
+      setSessions(s);
+      setSelectedDate((prev) => {
+        if (prev && s.some((x) => x.session_date === prev)) return prev;
+        const today = todayStr();
+        const todaySession = s.find((x) => x.session_date === today);
+        const program = programs.find((p) => p.id === programId);
+        return todaySession ? todaySession.session_date : (s[0]?.session_date || program?.program_date || "");
+      });
+    })();
+  }, [programId, programs]);
+
   const loadRows = useCallback(async () => {
-    if (!programId) return;
-    const { data } = await supabase.from("sp_attendance").select("id, sp_member_id, method, created_at").eq("program_id", programId);
+    if (!programId || !selectedDate) { setRows([]); return; }
+    const { data } = await supabase.from("sp_attendance").select("id, sp_member_id, method, created_at").eq("program_id", programId).eq("attendance_date", selectedDate);
     setRows(data || []);
-  }, [programId]);
+  }, [programId, selectedDate]);
   useEffect(() => { loadRows(); }, [loadRows]);
 
   const attended = useMemo(() => new Map(rows.map((r) => [r.sp_member_id, r])), [rows]);
   const toggle = async (m) => {
+    if (!selectedDate) return;
     setBusyId(m.id);
     const existing = attended.get(m.id);
     if (existing) {
@@ -1145,7 +1291,7 @@ export function SpecialAttendancePanel() {
       if (error) alert(error.message);
     } else {
       const { data: u } = await supabase.auth.getUser();
-      const { error } = await supabase.from("sp_attendance").insert({ program_id: programId, sp_member_id: m.id, method: "manual", marked_by: u?.user?.id || null });
+      const { error } = await supabase.from("sp_attendance").insert({ program_id: programId, sp_member_id: m.id, method: "manual", marked_by: u?.user?.id || null, attendance_date: selectedDate });
       if (error) alert(error.message);
     }
     await loadRows();
@@ -1168,7 +1314,10 @@ export function SpecialAttendancePanel() {
       <h1 className="font-display text-2xl text-[#4A0E52] mb-4">Special Program attendance</h1>
       <div className="flex flex-wrap gap-2 mb-2">
         <select className={inputCls + " w-auto"} value={programId} onChange={(e) => setProgramId(e.target.value)}>
-          {programs.map((p) => <option key={p.id} value={p.id}>{p.name} · {fmtDate(p.program_date)}</option>)}
+          {programs.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select className={inputCls + " w-auto"} value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)}>
+          {sessions.map((s) => <option key={s.id} value={s.session_date}>{fmtDate(s.session_date)}{s.label ? ` — ${s.label}` : ""}</option>)}
         </select>
         <div className="relative flex-1 min-w-[180px]">
           <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
@@ -1176,16 +1325,19 @@ export function SpecialAttendancePanel() {
         </div>
         <button onClick={loadRows} className={ghostBtn} title="Refresh"><RefreshCw className="w-4 h-4" /></button>
       </div>
+      {sessions.length === 0 && (
+        <p className="text-xs text-amber-700 mb-2">This program has no calendar dates yet — add one in Programs → Calendar before marking attendance.</p>
+      )}
       <div className="flex items-center justify-between mb-3 text-sm">
         <label className="flex items-center gap-2"><input type="checkbox" checked={registeredHere} onChange={(e) => setRegisteredHere(e.target.checked)} /> Only people registered for this program</label>
-        <span className="text-gray-500">{presentCount} present of {list.length} · {rows.length} total for this program</span>
+        <span className="text-gray-500">{presentCount} present of {list.length} · {rows.length} total for {selectedDate ? fmtDate(selectedDate) : "this day"}</span>
       </div>
       {list.length === 0 ? <p className="text-sm text-gray-400 py-8 text-center">No Special Program members to show.</p> : (
         <div className={card + " divide-y divide-[#F0EAD6]"}>
           {list.map((m) => {
             const a = attended.get(m.id);
             return (
-              <div key={m.id} onClick={() => busyId !== m.id && toggle(m)} className={`px-4 py-3 flex items-center gap-3 cursor-pointer ${a ? "bg-[#F1F8F1]" : "hover:bg-[#FBF9F1]"}`}>
+              <div key={m.id} onClick={() => busyId !== m.id && selectedDate && toggle(m)} className={`px-4 py-3 flex items-center gap-3 cursor-pointer ${a ? "bg-[#F1F8F1]" : "hover:bg-[#FBF9F1]"}`}>
                 <div className={`w-5 h-5 rounded border flex items-center justify-center ${a ? "bg-green-600 border-green-600 text-white" : "border-gray-300"}`}>
                   {busyId === m.id ? <Loader2 className="w-3 h-3 animate-spin" /> : a ? <Check className="w-3.5 h-3.5" /> : null}
                 </div>
