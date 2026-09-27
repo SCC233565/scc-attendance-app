@@ -439,6 +439,9 @@ function ProgramAttendeesTable({ program, onClose }) {
   const [memberModal, setMemberModal] = useState(null);
   const [newDeptName, setNewDeptName] = useState("");
   const [addingDept, setAddingDept] = useState(false);
+  const [tab, setTab] = useState("members");
+  const [openDept, setOpenDept] = useState(null);
+  const [assignId, setAssignId] = useState("");
 
   const checkboxField = useMemo(() => (program.form_fields || []).find((f) => f.type === "checkbox"), [program]);
   const fields = useMemo(() => (program.form_fields || []).filter((f) => f.key !== "full_name" && f.key !== "phone"), [program]);
@@ -494,6 +497,20 @@ function ProgramAttendeesTable({ program, onClose }) {
     load();
   };
 
+  const renameDept = async (d) => {
+    const v = window.prompt("Rename department", d.name);
+    if (!v || !v.trim() || v.trim() === d.name) return;
+    const { error } = await supabase.from("sp_departments").update({ name: v.trim() }).eq("id", d.id);
+    if (error) return alert(error.code === "23505" ? "That department already exists." : error.message);
+    load();
+  };
+  const deleteDept = async (d) => {
+    if (!window.confirm(`Delete department "${d.name}"? Members stay registered but lose this department.`)) return;
+    const { error } = await supabase.from("sp_departments").delete().eq("id", d.id);
+    if (error) return alert(error.message);
+    load();
+  };
+
   const toggleDept = async (memberId, deptId) => {
     const key = `${memberId}:${deptId}`;
     setBusyDept(key);
@@ -525,66 +542,105 @@ function ProgramAttendeesTable({ program, onClose }) {
           <p className="text-xs text-gray-400">{filtered.length} of {members.length} registered</p>
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={() => setMemberModal({})} className={primaryBtn + " text-xs"}><Plus className="w-4 h-4" /> Add member</button>
-          <button onClick={exportCsv} className={ghostBtn + " text-xs"}><Download className="w-4 h-4" /> CSV</button>
+          {tab === "members" && <button onClick={() => setMemberModal({})} className={primaryBtn + " text-xs"}><Plus className="w-4 h-4" /> Add member</button>}
+          {tab === "members" && <button onClick={exportCsv} className={ghostBtn + " text-xs"}><Download className="w-4 h-4" /> CSV</button>}
           <button onClick={onClose} className="text-gray-400 hover:text-[#4A0E52]"><X className="w-5 h-5" /></button>
         </div>
       </div>
-      <div className="px-4 py-2 border-b border-[#E9E2CC] flex flex-wrap items-center gap-2">
-        <div className="relative max-w-sm flex-1 min-w-[180px]">
-          <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
-          <input className={inputCls + " pl-9"} placeholder="Search name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <div className="flex items-center gap-1.5">
-          <input className={inputCls + " w-44"} placeholder="New department name" value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addDepartment()} />
-          <button onClick={addDepartment} disabled={!newDeptName.trim() || addingDept} className={ghostBtn + " text-xs"}>{addingDept ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add dept</button>
-        </div>
+
+      <div className="flex border-b border-[#E9E2CC] px-4 gap-1">
+        <button onClick={() => setTab("members")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "members" ? "border-[#4A0E52] text-[#4A0E52] font-medium" : "border-transparent text-gray-400"}`}>Members</button>
+        <button onClick={() => setTab("departments")} className={`px-3 py-2 text-sm border-b-2 -mb-px ${tab === "departments" ? "border-[#4A0E52] text-[#4A0E52] font-medium" : "border-transparent text-gray-400"}`}>Departments ({depts.length})</button>
       </div>
-      {loading ? (
-        <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>
-      ) : filtered.length === 0 ? (
-        <div className="flex-1 flex items-center justify-center text-sm text-gray-400">No registrants yet.</div>
+
+      {tab === "members" ? (
+        <>
+          <div className="px-4 py-2 border-b border-[#E9E2CC]">
+            <div className="relative max-w-sm">
+              <Search className="w-4 h-4 absolute left-3 top-2.5 text-gray-400" />
+              <input className={inputCls + " pl-9"} placeholder="Search name or phone…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            </div>
+          </div>
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center"><Loader2 className="w-6 h-6 animate-spin text-[#4A0E52]" /></div>
+          ) : filtered.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center text-sm text-gray-400">No registrants yet.</div>
+          ) : (
+            <div className="flex-1 overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead className="bg-[#F7F3E9] sticky top-0">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Name</th>
+                    <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Phone</th>
+                    {fields.map((f) => <th key={f.key} className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">{f.label || f.key}</th>)}
+                    <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Code</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#F0EAD6]">
+                  {filtered.map((m) => (
+                    <tr key={m.id} className="align-top">
+                      <td className="px-3 py-2 whitespace-nowrap font-medium">{m.full_name}</td>
+                      <td className="px-3 py-2 whitespace-nowrap text-gray-600">{m.phone || ""}</td>
+                      {fields.map((f) => <td key={f.key} className="px-3 py-2 text-gray-600 max-w-[220px]">{cellValue(m, f)}</td>)}
+                      <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-500">{codeOf.get(m.id) || ""}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
       ) : (
-        <div className="flex-1 overflow-auto">
-          <table className="min-w-full text-sm">
-            <thead className="bg-[#F7F3E9] sticky top-0">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Name</th>
-                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Phone</th>
-                {fields.map((f) => <th key={f.key} className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">{f.label || f.key}</th>)}
-                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Departments</th>
-                <th className="text-left px-3 py-2 font-medium text-[#4A0E52] whitespace-nowrap">Code</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#F0EAD6]">
-              {filtered.map((m) => (
-                <tr key={m.id} className="align-top">
-                  <td className="px-3 py-2 whitespace-nowrap font-medium">{m.full_name}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-gray-600">{m.phone || ""}</td>
-                  {fields.map((f) => <td key={f.key} className="px-3 py-2 text-gray-600 max-w-[220px]">{cellValue(m, f)}</td>)}
-                  <td className="px-3 py-2 min-w-[200px]">
-                    {depts.length === 0 ? <span className="text-xs text-gray-300">—</span> : (
-                      <div className="flex flex-wrap gap-1">
-                        {depts.map((d) => {
-                          const active = (memberDeptIds.get(m.id) || []).includes(d.id);
-                          const key = `${m.id}:${d.id}`;
-                          return (
-                            <button key={d.id} disabled={busyDept === key} onClick={() => toggleDept(m.id, d.id)}
-                              className={`text-[11px] px-2 py-0.5 rounded-full border ${active ? "bg-[#4A0E52] text-white border-[#4A0E52]" : "bg-white border-[#E9E2CC] text-gray-500"}`}>
-                              {d.name}
-                            </button>
-                          );
-                        })}
+        <div className="flex-1 overflow-auto p-4">
+          <div className="flex gap-2 mb-4 max-w-md">
+            <input className={inputCls} placeholder="New department name" value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && addDepartment()} />
+            <button onClick={addDepartment} disabled={!newDeptName.trim() || addingDept} className={primaryBtn}>{addingDept ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} Add</button>
+          </div>
+          {depts.length === 0 ? (
+            <p className="text-sm text-gray-400 py-8 text-center">No departments yet for this program. Add one above.</p>
+          ) : (
+            <div className="space-y-2 max-w-2xl">
+              {depts.map((d) => {
+                const inDept = members.filter((m) => (memberDeptIds.get(m.id) || []).includes(d.id));
+                const candidates = members.filter((m) => !(memberDeptIds.get(m.id) || []).includes(d.id));
+                return (
+                  <div key={d.id} className={card}>
+                    <div className="px-4 py-3 flex items-center gap-2 cursor-pointer" onClick={() => setOpenDept(openDept === d.id ? null : d.id)}>
+                      <Users className="w-4 h-4 text-[#4A0E52]" />
+                      <span className="flex-1 text-sm font-medium">{d.name}</span>
+                      <span className="text-xs text-gray-400">{inDept.length} member{inDept.length === 1 ? "" : "s"}</span>
+                      <button onClick={(e) => { e.stopPropagation(); renameDept(d); }} className="text-gray-400 hover:text-[#4A0E52]"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={(e) => { e.stopPropagation(); deleteDept(d); }} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                    </div>
+                    {openDept === d.id && (
+                      <div className="border-t border-[#F0EAD6] px-4 py-3">
+                        {inDept.length === 0 ? <p className="text-xs text-gray-400 mb-2">No members yet.</p> : (
+                          <ul className="mb-3 divide-y divide-[#F0EAD6]">
+                            {inDept.map((m) => (
+                              <li key={m.id} className="py-1.5 flex items-center justify-between text-sm">
+                                <span>{m.full_name}</span>
+                                <button disabled={busyDept === `${m.id}:${d.id}`} onClick={() => toggleDept(m.id, d.id)} className="text-gray-400 hover:text-red-600"><X className="w-4 h-4" /></button>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        <div className="flex gap-2">
+                          <select className={inputCls} value={assignId} onChange={(e) => setAssignId(e.target.value)}>
+                            <option value="">Add a member…</option>
+                            {candidates.map((m) => <option key={m.id} value={m.id}>{m.full_name}</option>)}
+                          </select>
+                          <button onClick={() => { if (assignId) { toggleDept(assignId, d.id); setAssignId(""); } }} disabled={!assignId} className={primaryBtn}>Add</button>
+                        </div>
                       </div>
                     )}
-                  </td>
-                  <td className="px-3 py-2 whitespace-nowrap font-mono text-xs text-gray-500">{codeOf.get(m.id) || ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
+
       {memberModal && (
         <SpMemberModal
           member={memberModal.id ? memberModal : null}
