@@ -448,17 +448,17 @@ function ProgramAttendeesTable({ program, onClose }) {
     const { data: m } = await supabase.from("sp_members").select("*").eq("source_program_id", program.id).order("created_at", { ascending: false });
     const ids = (m || []).map((x) => x.id);
     const [{ data: d }, { data: l }, { data: c }] = await Promise.all([
-      supabase.from("sp_departments").select("*").order("name"),
+      supabase.from("sp_departments").select("*").eq("program_id", program.id).order("name"),
       ids.length ? supabase.from("sp_member_departments").select("*").in("sp_member_id", ids) : Promise.resolve({ data: [] }),
       ids.length ? supabase.from("member_codes").select("code, sp_member_id").eq("section", "special").in("sp_member_id", ids) : Promise.resolve({ data: [] })
     ]);
-    // Keep the assignable Department list in sync with this program's volunteer tick-box choices
+    // Keep this program's Department list in sync with its own volunteer tick-box choices
     let allDepts = d || [];
     if (checkboxField?.options?.length) {
       const existingNames = new Set(allDepts.map((x) => x.name));
       const missing = checkboxField.options.filter((o) => !existingNames.has(o));
       if (missing.length) {
-        const { data: inserted } = await supabase.from("sp_departments").insert(missing.map((name) => ({ name }))).select("*");
+        const { data: inserted } = await supabase.from("sp_departments").insert(missing.map((name) => ({ name, program_id: program.id }))).select("*");
         allDepts = [...allDepts, ...(inserted || [])].sort((a, b) => a.name.localeCompare(b.name));
       }
     }
@@ -487,7 +487,7 @@ function ProgramAttendeesTable({ program, onClose }) {
     const name = newDeptName.trim();
     if (!name) return;
     setAddingDept(true);
-    const { error } = await supabase.from("sp_departments").insert({ name });
+    const { error } = await supabase.from("sp_departments").insert({ name, program_id: program.id });
     setAddingDept(false);
     if (error) return alert(error.code === "23505" ? "That department already exists." : error.message);
     setNewDeptName("");
