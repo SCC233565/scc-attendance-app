@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { Loader2, CheckCircle2, AlertTriangle, Copy, Check, LogOut } from "lucide-react";
 import { supabaseUrl, supabaseAnonKey } from "./supabaseClient";
 
-/* ---- Public (no-login) pages: /r/<token> registration, /a/<token> attendance QR, /me member portal ----
+/* ---- Public (no-login) pages: /r/<token> registration, /a/<token> attendance QR (program-level),
+   /ad/<token> attendance QR (per-day session), /me member portal ----
    Everything goes through the `public-portal` Edge Function. These pages never touch the database directly. */
 
 export function getPublicRoute() {
@@ -10,7 +11,9 @@ export function getPublicRoute() {
   let m = p.match(/^\/r\/([a-f0-9]{32})$/i);
   if (m) return { page: "register", token: m[1].toLowerCase() };
   m = p.match(/^\/a\/([a-f0-9]{32})$/i);
-  if (m) return { page: "attend", token: m[1].toLowerCase() };
+  if (m) return { page: "attend", token: m[1].toLowerCase(), kind: "att" };
+  m = p.match(/^\/ad\/([a-f0-9]{32})$/i);
+  if (m) return { page: "attend", token: m[1].toLowerCase(), kind: "att_session" };
   if (p === "/me") return { page: "portal" };
   return null;
 }
@@ -182,8 +185,8 @@ function RegisterPage({ token }) {
 }
 
 /* ------------------------- Attendance ------------------------- */
-function AttendPage({ token }) {
-  const { loading, program, error } = useProgram("att", token);
+function AttendPage({ token, kind = "att" }) {
+  const { loading, program, error } = useProgram(kind, token);
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -196,7 +199,7 @@ function AttendPage({ token }) {
     setErr("");
     if (!code.trim()) return setErr("Please enter your code.");
     setBusy(true);
-    const { ok, data } = await api({ action: "mark_attendance", token, code });
+    const { ok, data } = await api({ action: "mark_attendance", token, code, kind });
     setBusy(false);
     if (!ok) return setErr(data.error);
     setResult(data);
@@ -328,6 +331,6 @@ function MemberPortal() {
 
 export default function PublicRouter({ route }) {
   if (route.page === "register") return <RegisterPage token={route.token} />;
-  if (route.page === "attend") return <AttendPage token={route.token} />;
+  if (route.page === "attend") return <AttendPage token={route.token} kind={route.kind} />;
   return <MemberPortal />;
 }
