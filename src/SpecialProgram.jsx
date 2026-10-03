@@ -6,7 +6,7 @@ import {
 import QRCode from "qrcode";
 import Papa from "papaparse";
 import { supabase } from "./supabaseClient";
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 /* ============================================================
    Special Program — fully separate from church members/departments/attendance.
@@ -1394,6 +1394,16 @@ export function SpecialReportsPanel() {
 
   const byId = new Map(members.map((m) => [m.id, m]));
   const attendeesOf = (pid) => attendance.filter((a) => a.program_id === pid);
+  const uniquePresentOf = (pid) => new Set(attendeesOf(pid).map((a) => a.sp_member_id)).size;
+
+  const sortedPrograms = [...programs].sort((a, b) => new Date(a.program_date) - new Date(b.program_date));
+  const trendData = sortedPrograms.map((p) => ({
+    name: p.name.length > 14 ? p.name.slice(0, 13) + "…" : p.name,
+    fullName: p.name,
+    Present: uniquePresentOf(p.id)
+  })).slice(-12);
+  const presentCounts = programs.map((p) => uniquePresentOf(p.id));
+  const avgAttendance = presentCounts.length ? Math.round(presentCounts.reduce((a, b) => a + b, 0) / presentCounts.length) : 0;
 
   if (selected) {
     const rows = attendeesOf(selected.id).map((a) => ({ m: byId.get(a.sp_member_id), a })).filter((x) => x.m)
@@ -1419,18 +1429,42 @@ export function SpecialReportsPanel() {
     <div>
       <h1 className="font-display text-2xl text-[#4A0E52] mb-4">Special Program reports</h1>
       {programs.length === 0 ? <p className="text-sm text-gray-400 py-8 text-center">No Special Programs yet.</p> : (
-        <div className="space-y-2">
+        <>
+          <div className="grid grid-cols-2 gap-3 mb-6 max-w-sm">
+            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{programs.length}</p><p className="text-[11px] text-gray-400">Programs</p></div>
+            <div className={card + " px-4 py-3 text-center"}><p className="text-2xl font-display text-[#4A0E52]">{avgAttendance}</p><p className="text-[11px] text-gray-400">Average Attendance</p></div>
+          </div>
+
+          <h3 className="text-sm font-medium text-[#4A0E52] mb-2">Attendance Trend</h3>
+          <div className={card + " p-3 mb-6"} style={{ height: 260 }}>
+            {trendData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-sm text-gray-400">Not enough data yet.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData}>
+                  <CartesianGrid stroke="#F1ECDE" />
+                  <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <Tooltip labelFormatter={(_, p) => p?.[0]?.payload?.fullName || ""} />
+                  <Line type="monotone" dataKey="Present" stroke="#4A0E52" strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          <div className="space-y-2">
           {programs.map((p) => {
             const registered = members.filter((m) => m.source_program_id === p.id).length;
             return (
               <div key={p.id} onClick={() => setSelected(p)} className={card + " px-4 py-3 flex items-center gap-4 cursor-pointer hover:bg-[#FBF9F1]"}>
                 <div className="flex-1"><p className="text-sm font-medium">{p.name}</p><p className="text-xs text-gray-400">{fmtDate(p.program_date)}</p></div>
                 <div className="text-center"><p className="text-lg font-display text-[#4A0E52]">{registered}</p><p className="text-[10px] text-gray-400">registered</p></div>
-                <div className="text-center"><p className="text-lg font-display text-[#4A0E52]">{attendeesOf(p.id).length}</p><p className="text-[10px] text-gray-400">present</p></div>
+                <div className="text-center"><p className="text-lg font-display text-[#4A0E52]">{uniquePresentOf(p.id)}</p><p className="text-[10px] text-gray-400">present</p></div>
               </div>
             );
           })}
-        </div>
+          </div>
+        </>
       )}
     </div>
   );
