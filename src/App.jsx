@@ -1969,6 +1969,7 @@ function FinanceDashboard({ isOwner, onLock }) {
   const [newCatName, setNewCatName] = useState("");
   const [txForm, setTxForm] = useState({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10), payment_method: "" });
   const [txFormError, setTxFormError] = useState("");
+  const [savingTx, setSavingTx] = useState(false);
   const [confirmDeleteTx, setConfirmDeleteTx] = useState(null);
   const [confirmDeleteCat, setConfirmDeleteCat] = useState(null);
   const [range, setRange] = useState(() => ({ ...presetToRange("This month"), label: "This month" }));
@@ -2022,15 +2023,23 @@ function FinanceDashboard({ isOwner, onLock }) {
   };
 
   const addTransaction = async () => {
+    if (savingTx) return;
     if (!txForm.category_id || !txForm.amount) { setTxFormError("Please choose a category and enter an amount."); return; }
     if (!txForm.payment_method) { setTxFormError("Please confirm whether this was paid by Cash or Transfer."); return; }
     setTxFormError("");
+    setSavingTx(true);
     const { data: ud } = await supabase.auth.getUser();
-    await supabase.from("finance_transactions").insert([{
+    const { error: insErr } = await supabase.from("finance_transactions").insert([{
       type: showAddTx, category_id: txForm.category_id, amount: Number(txForm.amount),
       description: txForm.description, transaction_date: txForm.transaction_date,
       payment_method: txForm.payment_method, created_by: ud?.user?.id
     }]);
+    setSavingTx(false);
+    if (insErr) { setTxFormError("Could not save: " + insErr.message); return; }
+    // If the saved date is outside the date range being viewed, widen the range so the entry is visible
+    if (txForm.transaction_date < range.start || txForm.transaction_date > range.end) {
+      setRange({ start: txForm.transaction_date < range.start ? txForm.transaction_date : range.start, end: txForm.transaction_date > range.end ? txForm.transaction_date : range.end, label: "Custom range" });
+    }
     setTxForm({ category_id: "", amount: "", description: "", transaction_date: new Date().toISOString().slice(0,10), payment_method: "" });
     setShowAddTx(null); load();
   };
@@ -2351,7 +2360,7 @@ function FinanceDashboard({ isOwner, onLock }) {
             </label>
             <Field label="Description (optional)" value={txForm.description} onChange={(v) => setTxForm({ ...txForm, description: v })} />
             {txFormError && <p className="text-xs text-red-600 mb-3">{txFormError}</p>}
-            <div onClick={addTransaction} className="mt-2 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer">Save</div>
+            <div onClick={addTransaction} className={`mt-2 bg-[#4A0E52] text-white rounded-md py-2.5 text-center text-sm cursor-pointer ${savingTx ? "opacity-60 pointer-events-none" : ""}`}>{savingTx ? "Saving..." : "Save"}</div>
           </div>
         </div>
       )}
